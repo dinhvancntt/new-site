@@ -1,0 +1,6 @@
+{
+  "name": "@news/ingest",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts"
+}
