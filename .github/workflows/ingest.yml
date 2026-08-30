@@ -1,0 +1,33 @@
+name: ingest
+
+on:
+  schedule:
+    # Mỗi 3 giờ. GitHub chạy cron theo UTC và có thể trễ vài phút khi máy bận.
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  # Một lượt chạy tại một thời điểm: hai lượt chồng nhau sẽ tranh nhau cùng
+  # những bài mới và chỉ tạo ra công viết lại trùng lặp, tốn tiền model.
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run ingest
+        env:
+          NEWSDATA_API_KEY: ${{ secrets.NEWSDATA_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
