@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { slugify } from './slug.js';
+import { slugify } from './text.js';
 
 test('bỏ dấu tiếng Việt và nối các từ bằng gạch nối', () => {
   expect(slugify('Giá vàng tăng mạnh trong phiên sáng')).toBe(

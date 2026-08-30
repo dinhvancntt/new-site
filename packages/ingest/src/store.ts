@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { articles, articleContents, ingestRuns, type Db } from '@news/db';
+import { articles, articleContents, ingestRuns, removeDiacritics, slugify, type Db } from '@news/db';
 import { titleHash } from './dedupe.js';
-import { removeDiacritics, slugify } from './slug.js';
 
 export type LangContent = { title: string; summary: string; body: string };
 
