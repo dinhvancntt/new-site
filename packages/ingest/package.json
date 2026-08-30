@@ -2,5 +2,15 @@
   "name": "@news/ingest",
   "private": true,
   "type": "module",
-  "main": "src/index.ts"
+  "main": "src/index.ts",
+  "devDependencies": {
+    "@types/jsdom": "^30.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.122.0",
+    "@mozilla/readability": "^0.6.0",
+    "drizzle-orm": "^0.45.2",
+    "jsdom": "^30.0.1",
+    "postgres": "^3.4.9"
+  }
 }
