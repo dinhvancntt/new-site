@@ -1,12 +1,20 @@
 const COMBINING_MARKS = /[̀-ͯ]/g;
 const MAX_SLUG_LENGTH = 80;
 
-export function slugify(input: string): string {
-  const slug = input
+/**
+ * Bỏ dấu, chữ thường. Dùng cho cả `search_text` khi ghi lẫn chuỗi người dùng
+ * nhập khi tìm kiếm — hai bên phải dùng đúng một hàm (spec mục Tìm kiếm).
+ */
+export function removeDiacritics(input: string): string {
+  return input
     .replace(/[đĐ]/g, 'd')
     .normalize('NFD')
     .replace(COMBINING_MARKS, '')
-    .toLowerCase()
+    .toLowerCase();
+}
+
+export function slugify(input: string): string {
+  const slug = removeDiacritics(input)
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 
