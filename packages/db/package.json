@@ -1,0 +1,9 @@
+{
+  "name": "@news/db",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "devDependencies": {
+    "drizzle-kit": "^0.31.10"
+  }
+}
