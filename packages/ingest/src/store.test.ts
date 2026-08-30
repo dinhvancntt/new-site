@@ -6,12 +6,12 @@ import { storeArticle, startRun, finishRun, type StorableArticle } from './store
 const db = createDb();
 
 afterEach(async () => {
-  await db.delete(articles).where(like(articles.sourceId, 'test-%'));
+  await db.delete(articles).where(like(articles.sourceId, 'test-store-%'));
 });
 
 function storable(overrides: Partial<StorableArticle> = {}): StorableArticle {
   return {
-    sourceId: `test-${crypto.randomUUID()}`,
+    sourceId: `test-store-${crypto.randomUUID()}`,
     title: 'Central bank holds rates steady',
     sourceName: 'Reuters',
     sourceUrl: 'https://example.com/a',

@@ -63,22 +63,27 @@ export async function storeArticle(db: Db, input: StorableArticle): Promise<stri
 
     for (const lang of LANGS) {
       const content = input.contents[lang];
-      const base = slugify(content.title);
-      const taken = await tx
-        .select({ slug: articleContents.slug })
-        .from(articleContents)
-        .where(and(eq(articleContents.lang, lang), eq(articleContents.slug, base)))
-        .limit(1);
-
-      await tx.insert(articleContents).values({
+      const row = {
         articleId,
         lang,
-        slug: taken.length > 0 ? `${base}-${slugSuffix(input.sourceId)}` : base,
         title: content.title,
         summary: content.summary,
         body: content.body,
         searchText: searchTextOf(content),
-      });
+      };
+      const base = slugify(content.title);
+
+      // Để Postgres phân xử slug thay vì tự kiểm tra trước: kiểm tra trước rồi
+      // insert là một race, hai bài cùng slug chạy song song sẽ làm vỡ transaction.
+      const claimed = await tx
+        .insert(articleContents)
+        .values({ ...row, slug: base })
+        .onConflictDoNothing({ target: [articleContents.lang, articleContents.slug] })
+        .returning({ slug: articleContents.slug });
+
+      if (claimed.length === 0) {
+        await tx.insert(articleContents).values({ ...row, slug: `${base}-${slugSuffix(input.sourceId)}` });
+      }
     }
 
     return articleId;
