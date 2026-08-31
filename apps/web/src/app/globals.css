@@ -1,0 +1,98 @@
+@import 'tailwindcss';
+
+/*
+  Thẩm mỹ: bản tin điện báo. Giấy in ấm, mực gần đen, kẻ chỉ mảnh thay cho khung
+  và bóng đổ. Đúng hai họ chữ — serif cho nội dung, mono cho mọi thứ thuộc về
+  máy móc (giờ, nguồn, chuyên mục). Không có sans ở đâu cả; sự tiết chế đó chính
+  là tính cách của site.
+*/
+@theme {
+  --color-paper: #fbfaf7;
+  --color-paper-sunk: #f2eee5;
+  --color-ink: #12110e;
+  --color-ink-soft: #56534a;
+  --color-rule: #dcd7cb;
+  --color-rule-strong: #b9b2a2;
+
+  /* Đỏ bản tin: chỉ dùng cho vạch wire và dòng công bố AI. Không dùng làm màu trang trí. */
+  --color-wire: #b3231f;
+
+  --font-serif: var(--font-source-serif), Georgia, 'Times New Roman', serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, 'SFMono-Regular', monospace;
+
+  --text-lead: clamp(2rem, 1.2rem + 3.4vw, 3.75rem);
+  --text-section: clamp(1.5rem, 1.1rem + 1.6vw, 2.25rem);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-serif);
+    font-synthesis-weight: none;
+  }
+
+  ::selection {
+    background-color: var(--color-ink);
+    color: var(--color-paper);
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  /* Bàn phím phải thấy rõ mình đang ở đâu; viền theo mực chứ không theo màu mặc định của trình duyệt. */
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
+  }
+}
+
+/* Dòng slug: micro-type mono trên mỗi tiêu đề — GIỜ · NGUỒN · CHUYÊN MỤC. */
+@utility slugline {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+  font-weight: 500;
+}
+
+/* Tiêu đề báo: chữ đặc, hàng sát nhau, ngắt dòng cân đối. */
+@utility headline {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.011em;
+  text-wrap: balance;
+}
+
+/* Gạch chân mảnh chỉ hiện khi rê chuột — giữ mặt báo sạch khi đứng yên. */
+@utility link-rule {
+  &:hover {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+    text-decoration-color: var(--color-rule-strong);
+  }
+}
+
+@utility clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+@utility clamp-3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
