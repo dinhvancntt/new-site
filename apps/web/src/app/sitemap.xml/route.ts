@@ -1,6 +1,6 @@
 import { listLatest } from '@news/queries';
-import { getDb } from '@/lib/db';
 
+import { getDb } from '@/lib/db';
 import { buildSitemapXml } from '@/lib/sitemap';
 import { CATEGORIES, siteUrl } from '@/lib/site';
 
