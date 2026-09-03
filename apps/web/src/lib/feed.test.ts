@@ -48,3 +48,52 @@ test('trailing slash on the site url does not double up in links', () => {
 
   expect(xml).not.toContain('//vi');
 });
+
+test('attaches the article image as an enclosure so social tools pick it up', () => {
+  const xml = buildRssXml({
+    siteUrl: 'https://tin.example.com',
+    lang: 'vi',
+    items: [{ ...item, imageUrl: 'https://cdn.example.com/photo.jpg' }],
+  });
+
+  expect(xml).toContain(
+    '<enclosure url="https://cdn.example.com/photo.jpg" type="image/jpeg" length="0"/>',
+  );
+});
+
+test('leaves the enclosure out when an article has no image', () => {
+  const xml = buildRssXml({
+    siteUrl: 'https://tin.example.com',
+    lang: 'vi',
+    items: [{ ...item, imageUrl: null }],
+  });
+
+  expect(xml).not.toContain('<enclosure');
+});
+
+test('reads the enclosure mime type off the image extension', () => {
+  const xml = buildRssXml({
+    siteUrl: 'https://tin.example.com',
+    lang: 'vi',
+    items: [
+      { ...item, slug: 'a', imageUrl: 'https://cdn.example.com/a.png' },
+      { ...item, slug: 'b', imageUrl: 'https://cdn.example.com/b.WEBP' },
+    ],
+  });
+
+  expect(xml).toContain('type="image/png"');
+  expect(xml).toContain('type="image/webp"');
+});
+
+test('escapes image urls and falls back to jpeg when the path has no extension', () => {
+  const xml = buildRssXml({
+    siteUrl: 'https://tin.example.com',
+    lang: 'vi',
+    items: [{ ...item, imageUrl: 'https://images.unsplash.com/photo-1?w=800&q=80' }],
+  });
+
+  expect(xml).toContain(
+    '<enclosure url="https://images.unsplash.com/photo-1?w=800&amp;q=80" type="image/jpeg" length="0"/>',
+  );
+  expect(xml).not.toContain('w=800&q=80');
+});

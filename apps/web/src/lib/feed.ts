@@ -5,6 +5,7 @@ export type FeedItem = {
   title: string;
   summary: string;
   publishedAt: Date;
+  imageUrl?: string | null;
 };
 
 export type FeedInput = {
@@ -32,6 +33,16 @@ function escapeXml(value: string): string {
     .replace(/'/g, '&apos;');
 }
 
+/** Suy ra MIME từ đuôi đường dẫn: ảnh nguồn hay kèm query string nên phải cắt trước khi đọc đuôi. */
+function imageMimeType(url: string): string {
+  const path = url.split(/[?#]/)[0] ?? '';
+  const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'gif') return 'image/gif';
+  return 'image/jpeg';
+}
+
 export function buildRssXml({ siteUrl, lang, items }: FeedInput): string {
   const origin = siteUrl.replace(/\/+$/, '');
   const home = `${origin}/${lang}`;
@@ -39,15 +50,25 @@ export function buildRssXml({ siteUrl, lang, items }: FeedInput): string {
   const entries = items
     .map((item) => {
       const url = `${home}/${item.slug}`;
-      return [
+      const lines = [
         '    <item>',
         `      <title>${escapeXml(item.title)}</title>`,
         `      <link>${escapeXml(url)}</link>`,
         `      <guid isPermaLink="true">${escapeXml(url)}</guid>`,
         `      <description>${escapeXml(item.summary)}</description>`,
         `      <pubDate>${item.publishedAt.toUTCString()}</pubDate>`,
-        '    </item>',
-      ].join('\n');
+      ];
+
+      // RSS 2.0 bắt buộc có length; biết số byte thật thì phải tải ảnh về nên để 0 —
+      // dlvr.it và các reader đều chấp nhận.
+      if (item.imageUrl) {
+        lines.push(
+          `      <enclosure url="${escapeXml(item.imageUrl)}" type="${imageMimeType(item.imageUrl)}" length="0"/>`,
+        );
+      }
+
+      lines.push('    </item>');
+      return lines.join('\n');
     })
     .join('\n');
 

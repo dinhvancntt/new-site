@@ -24,6 +24,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ lan
       title: article.title,
       summary: article.summary,
       publishedAt: article.publishedAt,
+      imageUrl: article.imageUrl,
     })),
   });
 
