@@ -2,6 +2,7 @@ import { Analytics } from '@vercel/analytics/next';
 import type { Metadata } from 'next';
 import { IBM_Plex_Mono, Source_Serif_4 } from 'next/font/google';
 import '../globals.css';
+import { cfBeacon } from '@/lib/beacon';
 import { LANGS, parseLang } from '@/lib/lang';
 import { SITE_NAME, STRINGS, siteUrl } from '@/lib/site';
 
@@ -58,12 +59,17 @@ export default async function LangLayout({
   // Layout không tự gọi notFound(): trang 404 vẫn cần chính layout này để dựng
   // khung, nên từng page kiểm tra lang rồi mới 404.
   const lang = parseLang((await params).lang) ?? 'vi';
+  const beacon = cfBeacon(process.env['CF_BEACON_TOKEN']);
 
   return (
     <html lang={lang} className={`${serif.variable} ${mono.variable}`}>
       <body>
         {children}
         <Analytics />
+        {/* Cloudflare Web Analytics: giữ số liệu dài hạn, bù retention 1 tháng của Vercel. */}
+        {beacon ? (
+          <script type="module" src={beacon.src} data-cf-beacon={beacon.data} />
+        ) : null}
       </body>
     </html>
   );
