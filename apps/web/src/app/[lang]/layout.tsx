@@ -1,3 +1,4 @@
+import { Analytics } from '@vercel/analytics/next';
 import type { Metadata } from 'next';
 import { IBM_Plex_Mono, Source_Serif_4 } from 'next/font/google';
 import '../globals.css';
@@ -29,6 +30,7 @@ export async function generateMetadata({
   params: Promise<{ lang: string }>;
 }): Promise<Metadata> {
   const lang = parseLang((await params).lang) ?? 'vi';
+  const gscVerification = process.env['GSC_VERIFICATION'];
 
   return {
     metadataBase: new URL(siteUrl()),
@@ -41,6 +43,8 @@ export async function generateMetadata({
     },
     openGraph: { siteName: SITE_NAME, type: 'website', locale: lang },
     robots: { index: true, follow: true },
+    // Thẻ verify Search Console: chỉ xuất hiện khi đã đặt biến, để trống thì không render.
+    ...(gscVerification ? { verification: { google: gscVerification } } : {}),
   };
 }
 
@@ -57,7 +61,10 @@ export default async function LangLayout({
 
   return (
     <html lang={lang} className={`${serif.variable} ${mono.variable}`}>
-      <body>{children}</body>
+      <body>
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }
