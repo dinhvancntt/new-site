@@ -17,7 +17,7 @@ function requireEnv(name: string): string {
 /** Điểm vào của worker chạy trên GitHub Actions mỗi 3 giờ. */
 export async function main(): Promise<number> {
   const newsdataKey = requireEnv('NEWSDATA_API_KEY');
-  requireEnv('ANTHROPIC_API_KEY');
+  requireEnv('BAI_API_KEY');
   const db = createDb(requireEnv('DATABASE_URL'));
   const rewriteDeps = createRewriteClient();
 

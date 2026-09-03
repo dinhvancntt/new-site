@@ -1,9 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { jsonSchemaOutputFormat } from '@anthropic-ai/sdk/helpers/json-schema';
-
-export const REWRITE_MODEL = 'claude-opus-5';
+export const REWRITE_MODEL = 'deepseek-v4-flash';
 export const MAX_TOKENS = 8000;
-export const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
+export const BAI_BASE_URL = 'https://api.b.ai/v1';
+export const MAX_ATTEMPTS = 4;
 
 export interface RewriteInput {
   title: string;
@@ -38,52 +36,24 @@ Ràng buộc bắt buộc:
 - Không nêu ý kiến, không đứng về phía nào.
 - Bản tiếng Việt phải là văn viết báo tự nhiên, không dịch từng chữ.
 - Thân bài dài 3-5 đoạn; tóm tắt tối đa 2 câu; 3-6 thẻ tags viết thường.
-- Nếu bài gốc không đủ dữ kiện để viết, đặt insufficient: true thay vì viết bừa.`;
+- Nếu bài gốc không đủ dữ kiện để viết, đặt insufficient: true thay vì viết bừa.
 
-const OUTPUT_SCHEMA = {
-  type: 'object',
-  properties: {
-    title_vi: { type: 'string' },
-    title_en: { type: 'string' },
-    summary_vi: { type: 'string' },
-    summary_en: { type: 'string' },
-    body_vi: { type: 'string' },
-    body_en: { type: 'string' },
-    tags: { type: 'array', items: { type: 'string' } },
-    insufficient: { type: 'boolean' },
-  },
-  required: [
-    'title_vi',
-    'title_en',
-    'summary_vi',
-    'summary_en',
-    'body_vi',
-    'body_en',
-    'tags',
-    'insufficient',
-  ],
-  additionalProperties: false,
-} as const;
+Chỉ trả về một JSON object duy nhất, không kèm markdown hay lời giải thích, gồm đúng các khoá:
+- "title_vi", "title_en": string, tiêu đề hai thứ tiếng.
+- "summary_vi", "summary_en": string, tóm tắt tối đa 2 câu.
+- "body_vi", "body_en": string, các đoạn cách nhau bằng một dòng trống.
+- "tags": array gồm 3-6 string viết thường.
+- "insufficient": boolean, true khi bài gốc không đủ dữ kiện.`;
 
 export function buildRewriteRequest(input: RewriteInput) {
   return {
     model: REWRITE_MODEL,
     max_tokens: MAX_TOKENS,
-    thinking: { type: 'adaptive' as const },
-    betas: [FALLBACK_BETA],
-    fallbacks: 'default' as const,
-    output_config: {
-      effort: 'medium' as const,
-      format: jsonSchemaOutputFormat(OUTPUT_SCHEMA, { transform: false }),
-    },
-    system: [
-      {
-        type: 'text' as const,
-        text: SYSTEM_PROMPT,
-        cache_control: { type: 'ephemeral' as const },
-      },
-    ],
+    // Provider không nhận JSON Schema, chỉ có JSON mode — nên schema nằm ở
+    // system prompt và mọi field đều được kiểm lại ở validateArticle().
+    response_format: { type: 'json_object' as const },
     messages: [
+      { role: 'system' as const, content: SYSTEM_PROMPT },
       {
         role: 'user' as const,
         content: `Nguồn: ${input.sourceName}\nTiêu đề gốc: ${input.title}\n\nThân bài gốc:\n${input.body}`,
@@ -92,17 +62,112 @@ export function buildRewriteRequest(input: RewriteInput) {
   };
 }
 
-export interface RewriteDeps {
-  parse: (request: ReturnType<typeof buildRewriteRequest>) => Promise<{
-    stop_reason: string | null;
-    parsed_output?: unknown;
-  }>;
+export interface RewriteCompletion {
+  finish_reason: string | null;
+  text: string;
 }
 
-export function createRewriteClient(apiKey = process.env['ANTHROPIC_API_KEY']): RewriteDeps {
-  const client = new Anthropic({ apiKey, maxRetries: 4 });
+export interface RewriteDeps {
+  complete: (request: ReturnType<typeof buildRewriteRequest>) => Promise<RewriteCompletion>;
+}
+
+const RETRY_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Backoff mũ, ưu tiên Retry-After của server. */
+function retryDelay(attempt: number, retryAfter: string | null): number {
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds) && seconds > 0) return Math.min(seconds * 1000, 30_000);
+  return Math.min(1000 * 2 ** attempt, 8000) + Math.random() * 250;
+}
+
+export function createRewriteClient(
+  apiKey = process.env['BAI_API_KEY'],
+  baseUrl = BAI_BASE_URL,
+): RewriteDeps {
   return {
-    parse: (request) => client.beta.messages.parse(request as never) as never,
+    complete: async (request) => {
+      let lastError: Error = new Error('không gọi được provider');
+
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+        if (attempt > 0) await sleep(retryDelay(attempt - 1, null));
+
+        let response: Response;
+        try {
+          response = await fetch(`${baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${apiKey}`,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify(request),
+            signal: AbortSignal.timeout(180_000),
+          });
+        } catch (cause) {
+          lastError = new Error('lỗi mạng khi gọi provider', { cause });
+          continue;
+        }
+
+        if (!response.ok) {
+          const detail = (await response.text().catch(() => '')).slice(0, 300);
+          lastError = new Error(`provider trả HTTP ${response.status}: ${detail}`);
+          if (!RETRY_STATUS.has(response.status)) throw lastError;
+          await sleep(retryDelay(attempt, response.headers.get('retry-after')));
+          continue;
+        }
+
+        const payload = (await response.json()) as {
+          choices?: { finish_reason?: string | null; message?: { content?: string | null } }[];
+        };
+        const choice = payload.choices?.[0];
+        return {
+          finish_reason: choice?.finish_reason ?? null,
+          text: choice?.message?.content ?? '',
+        };
+      }
+
+      throw lastError;
+    },
+  };
+}
+
+const FENCE = /^```(?:json)?\s*([\s\S]*?)\s*```$/;
+
+/** Model đôi khi bọc JSON trong fence dù đã bật JSON mode. */
+function stripFence(text: string): string {
+  const trimmed = text.trim();
+  return FENCE.exec(trimmed)?.[1]?.trim() ?? trimmed;
+}
+
+const STRING_FIELDS = [
+  'title_vi',
+  'title_en',
+  'summary_vi',
+  'summary_en',
+  'body_vi',
+  'body_en',
+] as const;
+
+/** Thay cho JSON Schema phía server: field thiếu hoặc sai kiểu là loại bài. */
+function validateArticle(value: Record<string, unknown>): Omit<RewrittenArticle, 'category'> | null {
+  for (const field of STRING_FIELDS) {
+    const candidate = value[field];
+    if (typeof candidate !== 'string' || candidate.trim() === '') return null;
+  }
+
+  const tags = value['tags'];
+  if (!Array.isArray(tags) || tags.length === 0) return null;
+  if (!tags.every((tag): tag is string => typeof tag === 'string' && tag.trim() !== '')) return null;
+
+  return {
+    title_vi: value['title_vi'] as string,
+    title_en: value['title_en'] as string,
+    summary_vi: value['summary_vi'] as string,
+    summary_en: value['summary_en'] as string,
+    body_vi: value['body_vi'] as string,
+    body_en: value['body_en'] as string,
+    tags: tags.map((tag) => tag.trim()),
   };
 }
 
@@ -110,22 +175,34 @@ export async function rewriteArticle(
   input: RewriteInput,
   deps: RewriteDeps,
 ): Promise<RewriteResult> {
-  let message: Awaited<ReturnType<RewriteDeps['parse']>>;
+  let completion: RewriteCompletion;
   try {
-    message = await deps.parse(buildRewriteRequest(input));
+    completion = await deps.complete(buildRewriteRequest(input));
   } catch {
     return { ok: false, reason: 'error' };
   }
 
-  // Kiểm tra stop_reason trước khi chạm vào content — spec Bước 4.
-  if (message.stop_reason === 'refusal') return { ok: false, reason: 'refusal' };
+  // Xét finish_reason trước khi chạm vào content — spec Bước 4.
+  if (completion.finish_reason === 'content_filter') return { ok: false, reason: 'refusal' };
 
-  const output = message.parsed_output as
-    | (Omit<RewrittenArticle, 'category'> & { insufficient: boolean })
-    | undefined;
-  if (!output) return { ok: false, reason: 'error' };
-  if (output.insufficient) return { ok: false, reason: 'insufficient' };
+  const text = stripFence(completion.text);
+  if (text === '') return { ok: false, reason: 'error' };
 
-  const { insufficient: _drop, ...article } = output;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { ok: false, reason: 'error' };
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, reason: 'error' };
+  }
+
+  const output = parsed as Record<string, unknown>;
+  if (output['insufficient'] === true) return { ok: false, reason: 'insufficient' };
+
+  const article = validateArticle(output);
+  if (!article) return { ok: false, reason: 'error' };
+
   return { ok: true, article: { ...article, category: input.category } };
 }

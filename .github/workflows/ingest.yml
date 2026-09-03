@@ -29,5 +29,5 @@ jobs:
       - run: npm run ingest
         env:
           NEWSDATA_API_KEY: ${{ secrets.NEWSDATA_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          BAI_API_KEY: ${{ secrets.BAI_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
