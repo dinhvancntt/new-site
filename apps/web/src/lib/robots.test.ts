@@ -11,6 +11,12 @@ describe('buildRobotsTxt', () => {
     expect(txt).toContain('Sitemap: https://example.com/sitemap.xml');
   });
 
+  it('trỏ thêm tới news sitemap cho Google News', () => {
+    expect(buildRobotsTxt('https://example.com')).toContain(
+      'Sitemap: https://example.com/news-sitemap.xml',
+    );
+  });
+
   it('bỏ dấu / thừa ở cuối siteUrl', () => {
     expect(buildRobotsTxt('https://example.com//')).toContain(
       'Sitemap: https://example.com/sitemap.xml',

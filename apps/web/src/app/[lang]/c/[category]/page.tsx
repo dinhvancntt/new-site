@@ -6,7 +6,7 @@ import { Masthead } from '@/components/Masthead';
 import { River } from '@/components/River';
 import { getDb } from '@/lib/db';
 import { LANGS, parseLang } from '@/lib/lang';
-import { CATEGORIES, CATEGORY_LABEL, STRINGS, isCategory } from '@/lib/site';
+import { CATEGORIES, CATEGORY_DESCRIPTION, CATEGORY_LABEL, SITE_NAME, STRINGS, hreflangAlternates, isCategory, siteUrl } from '@/lib/site';
 
 export const revalidate = 300;
 
@@ -22,15 +22,26 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   if (!lang || !isCategory(category)) return {};
 
   const label = CATEGORY_LABEL[lang][category];
+  const title = lang === 'vi' ? `${label} — Tin ${label.toLowerCase()} quốc tế mới nhất` : `${label} — Latest international ${label.toLowerCase()} news`;
+  const description = CATEGORY_DESCRIPTION[lang][category];
 
   return {
-    title: label,
+    title,
+    description,
     alternates: {
       canonical: `/${lang}/c/${category}`,
-      languages: {
-        vi: `/vi/c/${category}`,
-        en: `/en/c/${category}`,
-      },
+      languages: hreflangAlternates(`/vi/c/${category}`, `/en/c/${category}`),
+    },
+    openGraph: {
+      type: 'website',
+      url: `/${lang}/c/${category}`,
+      title,
+      description,
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
     },
   };
 }
@@ -42,15 +53,29 @@ export default async function CategoryPage({ params }: Params) {
 
   const t = STRINGS[lang];
   const articles = await listByCategory(getDb(), lang, category, { limit: 40 });
+  const origin = siteUrl().replace(/\/+$/, '');
+  const label = CATEGORY_LABEL[lang][category];
+  const breadcrumbJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: SITE_NAME, item: `${origin}/${lang}` },
+      { '@type': 'ListItem', position: 2, name: label, item: `${origin}/${lang}/c/${category}` },
+    ],
+  };
 
   return (
     <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
       <Masthead lang={lang} activeCategory={category} />
 
       <main className="mx-auto max-w-[1180px] px-5">
-        <h1 className="headline border-b-2 border-ink py-6 text-[length:var(--text-section)]">
+        <h1 className="headline border-b-2 border-ink pt-6 pb-2 text-[length:var(--text-section)]">
           {CATEGORY_LABEL[lang][category]}
         </h1>
+        <p className="max-w-[68ch] pt-3 text-[0.9375rem] leading-relaxed text-ink-soft">
+          {CATEGORY_DESCRIPTION[lang][category]}
+        </p>
 
         <div className="pt-6">
           {articles.length > 0 ? (

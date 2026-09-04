@@ -30,7 +30,7 @@ export function LeadStory({ lang, article }: { lang: Lang; article: ArticleCard 
           <div className="md:col-span-5 md:pt-1">
             <Thumb
               src={article.imageUrl}
-              alt=""
+              alt={article.title}
               width={960}
               height={640}
               priority

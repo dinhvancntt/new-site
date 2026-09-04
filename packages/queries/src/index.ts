@@ -19,6 +19,15 @@ export type ArticleDetail = ArticleCard & {
   sourceUrl: string;
 };
 
+/** Dòng sitemap: đủ khóa để ghép cặp vi–en (hreflang) và kèm ảnh (image sitemap). */
+export type SitemapEntry = {
+  articleId: string;
+  slug: string;
+  title: string;
+  publishedAt: Date;
+  imageUrl: string | null;
+};
+
 export type ListOptions = { limit: number; offset?: number };
 
 const cardColumns = {
@@ -55,6 +64,26 @@ export function listByCategory(
   return listQuery(db, lang, options).where(
     and(eq(articleContents.lang, lang), eq(articles.category, category)),
   );
+}
+
+/** Liệt kê bài cho sitemap: mới nhất trước, kèm articleId để ghép cặp ngôn ngữ. */
+export function listSitemapEntries(db: Db, lang: Lang, options: ListOptions): Promise<SitemapEntry[]> {
+  const { limit, offset = 0 } = options;
+  return db
+    .select({
+      articleId: articles.id,
+      slug: articleContents.slug,
+      title: articleContents.title,
+      publishedAt: articles.publishedAt,
+      imageUrl: articles.imageUrl,
+    })
+    .from(articleContents)
+    .innerJoin(articles, eq(articles.id, articleContents.articleId))
+    .where(eq(articleContents.lang, lang))
+    .orderBy(desc(articles.publishedAt), desc(articleContents.slug))
+    .limit(limit)
+    .offset(offset)
+    .$dynamic();
 }
 
 export async function getArticle(db: Db, lang: Lang, slug: string): Promise<ArticleDetail | null> {

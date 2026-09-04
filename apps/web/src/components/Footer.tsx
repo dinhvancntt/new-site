@@ -28,6 +28,26 @@ export function Footer({ lang }: { lang: Lang }) {
               </Link>
             </li>
             <li>
+              <Link href={`/${lang}/archive`} className="link-rule">
+                {t.archive}
+              </Link>
+            </li>
+            <li>
+              <Link href={`/${lang}/about`} className="link-rule">
+                {t.about}
+              </Link>
+            </li>
+            <li>
+              <Link href={`/${lang}/contact`} className="link-rule">
+                {t.contact}
+              </Link>
+            </li>
+            <li>
+              <Link href={`/${lang}/policy`} className="link-rule">
+                {t.policy}
+              </Link>
+            </li>
+            <li>
               <Link href={`/${otherLang(lang)}`} className="link-rule">
                 {t.otherLanguage}
               </Link>

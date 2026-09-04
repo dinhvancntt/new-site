@@ -8,6 +8,7 @@ export function buildRobotsTxt(siteUrl: string): string {
     'Disallow: /*/search',
     '',
     `Sitemap: ${origin}/sitemap.xml`,
+    `Sitemap: ${origin}/news-sitemap.xml`,
     '',
   ].join('\n');
 }

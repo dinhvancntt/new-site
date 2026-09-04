@@ -12,6 +12,8 @@ export type FeedInput = {
   siteUrl: string;
   lang: Lang;
   items: readonly FeedItem[];
+  /** Mốc lastBuildDate của kênh (mặc định giờ hiện tại). */
+  buildDate?: Date;
 };
 
 const CHANNEL_TITLE: Record<Lang, string> = {
@@ -43,7 +45,7 @@ function imageMimeType(url: string): string {
   return 'image/jpeg';
 }
 
-export function buildRssXml({ siteUrl, lang, items }: FeedInput): string {
+export function buildRssXml({ siteUrl, lang, items, buildDate = new Date() }: FeedInput): string {
   const origin = siteUrl.replace(/\/+$/, '');
   const home = `${origin}/${lang}`;
 
@@ -80,6 +82,9 @@ export function buildRssXml({ siteUrl, lang, items }: FeedInput): string {
     `    <link>${escapeXml(home)}</link>`,
     `    <description>${escapeXml(CHANNEL_DESCRIPTION[lang])}</description>`,
     `    <language>${lang}</language>`,
+    `    <lastBuildDate>${buildDate.toUTCString()}</lastBuildDate>`,
+    // Gợi ý reader quay lại mỗi 15 phút, khớp nhịp ingest tin mới.
+    '    <ttl>15</ttl>',
     `    <atom:link href="${escapeXml(`${home}/rss.xml`)}" rel="self" type="application/rss+xml"/>`,
     entries,
     '  </channel>',

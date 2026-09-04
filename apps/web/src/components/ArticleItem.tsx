@@ -22,7 +22,7 @@ export function ArticleItem({
         {withThumb ? (
           <Thumb
             src={article.imageUrl}
-            alt=""
+            alt={article.title}
             width={480}
             height={270}
             className="mb-3 aspect-[16/9]"

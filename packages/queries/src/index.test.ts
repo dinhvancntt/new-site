@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'vitest';
 import { like } from 'drizzle-orm';
 import { articles, createDb, slugify } from '@news/db';
 import { storeArticle, type StorableArticle } from '../../ingest/src/store.js';
-import { getArticle, listByCategory, listLatest, searchArticles, siblingSlug } from './index.js';
+import { getArticle, listByCategory, listLatest, listSitemapEntries, searchArticles, siblingSlug } from './index.js';
 
 const db = createDb();
 const PREFIX = 'test-queries-';
@@ -118,6 +118,18 @@ test('paging skips the rows already shown', async () => {
   const second = await listLatest(db, 'vi', { limit: 50, offset: 1 });
 
   expect(second.map((row) => row.slug)).not.toContain(first[0]!.slug);
+});
+
+test('sitemap entries carry the article id so languages can be paired', async () => {
+  const vi = ours(await listSitemapEntries(db, 'vi', { limit: 50 }));
+  const en = ours(await listSitemapEntries(db, 'en', { limit: 50 }));
+
+  expect(vi).toHaveLength(3);
+  expect(vi[0]).toMatchObject({ title: 'Hãng xe điện mở nhà máy mới', imageUrl: 'https://example.com/a.jpg' });
+  // Cùng một bài hai ngôn ngữ chia sẻ articleId — sitemap dùng khóa này ghép hreflang.
+  const viIds = new Set(vi.map((row) => row.articleId));
+  const enIds = new Set(en.map((row) => row.articleId));
+  expect(viIds).toEqual(enIds);
 });
 
 test('an article page gets the body and the attribution it must show', async () => {

@@ -13,11 +13,13 @@ export default function NotFound() {
       <p className="slugline text-wire">404</p>
 
       <div className="mt-6 border-t-2 border-ink">
-        {LANGS.map((lang) => {
+        {LANGS.map((lang, index) => {
           const t = STRINGS[lang];
+          // Một H1 duy nhất cho cả trang; bản ngôn ngữ thứ hai dùng H2.
+          const Heading = index === 0 ? 'h1' : 'h2';
           return (
             <section key={lang} className="border-b border-rule py-7">
-              <h1 className="headline text-[length:var(--text-section)]">{t.notFoundTitle}</h1>
+              <Heading className="headline text-[length:var(--text-section)]">{t.notFoundTitle}</Heading>
               <p className="mt-2 max-w-[52ch] text-ink-soft">{t.notFoundBody}</p>
               <p className="slugline mt-4">
                 <Link href={`/${lang}`} className="link-rule text-ink">

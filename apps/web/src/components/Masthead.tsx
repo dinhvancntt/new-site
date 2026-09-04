@@ -7,13 +7,17 @@ export function Masthead({
   lang,
   activeCategory,
   otherLangHref,
+  siteNameAs = 'span',
 }: {
   lang: Lang;
   activeCategory?: string;
   /** Trang bài truyền slug của bản ngôn ngữ kia để nút chuyển giữ nguyên bài đang đọc. */
   otherLangHref?: string;
+  /** Trang chủ dùng h1 cho tên báo; trang con dùng span để giữ một h1 duy nhất cho bài. */
+  siteNameAs?: 'h1' | 'span';
 }) {
   const t = STRINGS[lang];
+  const SiteNameTag = siteNameAs;
 
   return (
     <header>
@@ -37,9 +41,9 @@ export function Masthead({
       <div className="mx-auto max-w-[1180px] px-5">
         <div className="py-6 text-center sm:py-8">
           <Link href={`/${lang}`} className="inline-block">
-            <span className="headline block text-[clamp(2rem,1.4rem+2.6vw,3.25rem)] tracking-[-0.025em]">
+            <SiteNameTag className="headline block text-[clamp(2rem,1.4rem+2.6vw,3.25rem)] tracking-[-0.025em]">
               {SITE_NAME}
-            </span>
+            </SiteNameTag>
           </Link>
         </div>
 

@@ -1,4 +1,4 @@
-import { listLatest } from '@news/queries';
+import { listSitemapEntries } from '@news/queries';
 
 import { getDb } from '@/lib/db';
 import { buildSitemapXml } from '@/lib/sitemap';
@@ -10,12 +10,17 @@ export async function GET() {
   const db = getDb();
 
   const [vi, en] = await Promise.all([
-    listLatest(db, 'vi', { limit: 2000 }),
-    listLatest(db, 'en', { limit: 2000 }),
+    listSitemapEntries(db, 'vi', { limit: 2000 }),
+    listSitemapEntries(db, 'en', { limit: 2000 }),
   ]);
 
-  const toEntries = (articles: Awaited<ReturnType<typeof listLatest>>) =>
-    articles.map((article) => ({ slug: article.slug, publishedAt: article.publishedAt }));
+  const toEntries = (articles: Awaited<ReturnType<typeof listSitemapEntries>>) =>
+    articles.map((article) => ({
+      slug: article.slug,
+      publishedAt: article.publishedAt,
+      articleId: article.articleId,
+      imageUrl: article.imageUrl,
+    }));
 
   const xml = buildSitemapXml({
     siteUrl: siteUrl(),
