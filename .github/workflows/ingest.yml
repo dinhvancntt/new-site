@@ -2,8 +2,8 @@ name: ingest
 
 on:
   schedule:
-    # Mỗi 3 giờ. GitHub chạy cron theo UTC và có thể trễ vài phút khi máy bận.
-    - cron: '0 */3 * * *'
+    # Mỗi 30 phút. GitHub chạy cron theo UTC và có thể trễ vài phút khi máy bận.
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 concurrency:
