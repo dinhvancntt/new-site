@@ -67,6 +67,15 @@ test('provider value tolerates case and surrounding whitespace from UI paste', (
   expect(resolveRewriteConfig({ REWRITE_PROVIDER: 'bai' }).provider).toBe('bai');
 });
 
+test('provider falls back to Gemini when its key exists without explicit setting', () => {
+  expect(resolveRewriteConfig({ GEMINI_API_KEY: 'test-key' }).provider).toBe('gemini');
+});
+
+test('explicit bai wins even when a Gemini key exists', () => {
+  const config = resolveRewriteConfig({ REWRITE_PROVIDER: 'bai', GEMINI_API_KEY: 'test-key' });
+  expect(config.provider).toBe('bai');
+});
+
 test('provider honours GEMINI_MODEL and GEMINI_BASE_URL overrides', () => {
   const config = resolveRewriteConfig({
     REWRITE_PROVIDER: 'gemini',

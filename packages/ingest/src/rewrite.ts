@@ -88,8 +88,13 @@ export type RewriteConfig = {
  */
 export function resolveRewriteConfig(env: Record<string, string | undefined> = process.env): RewriteConfig {
   // Chuẩn hoá vì giá trị paste từ UI dễ dính hoa/thường hoặc khoảng trắng.
+  // Nếu không ghi rõ mà có key Gemini thì dùng Gemini luôn — đỡ phụ thuộc
+  // vào một secret cấu hình dễ gõ sai.
   const raw = (env['REWRITE_PROVIDER'] ?? '').trim().toLowerCase();
-  if (raw === 'gemini') {
+  if (raw === 'bai') {
+    return { provider: 'bai', apiKey: env['BAI_API_KEY'], baseUrl: BAI_BASE_URL, model: REWRITE_MODEL };
+  }
+  if (raw === 'gemini' || (!raw && env['GEMINI_API_KEY'])) {
     return {
       provider: 'gemini',
       apiKey: env['GEMINI_API_KEY'],
