@@ -57,7 +57,6 @@ export const CONSERVATIVE_LIMIT = { rpm: 5, rpd: 20 };
 export const DEFAULT_MODEL_LADDER = [
   'gemini-3.6-flash',
   'gemini-3.5-flash',
-  'gemini-2.5-flash',
   'gemini-3.5-flash-lite',
   'gemini-3.1-flash-lite',
 ];
@@ -197,6 +196,11 @@ export function resolveRewriteConfig(env: Record<string, string | undefined> = p
 // thêm quota rồi vẫn 429. Gặp 429 là dừng, để pipeline bỏ qua phần còn lại.
 const RETRY_STATUS = new Set([408, 409, 425, 500, 502, 503, 504]);
 
+/** Log Actions tách dòng: gộp về một dòng để mỗi sự kiện là một entry. */
+function oneLine(text: string): string {
+  return text.replace(/s+/g, ' ').trim();
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Log 1 lần mỗi run khi chạm trần rate limit để Actions thấy được. */
@@ -210,22 +214,35 @@ function retryDelay(attempt: number, retryAfter: string | null): number {
 }
 
 /** Lý do 429: vượt trần phút thì chờ được, vượt trần ngày thì phải đổi model. */
-export function quotaScope(body: string): 'day' | 'minute' {
+export function quotaIds(body: string): string {
   let ids = '';
-  try {
-    const parsed = JSON.parse(body) as {
-      error?: { details?: { violations?: { quotaId?: string; quotaMetric?: string }[] }[] };
-    };
-    for (const detail of parsed.error?.details ?? []) {
+  for (const root of parseErrorRoots(body)) {
+    for (const detail of root.error?.details ?? []) {
       for (const violation of detail.violations ?? []) {
         ids += `${violation.quotaId ?? ''} ${violation.quotaMetric ?? ''} `;
       }
     }
-  } catch {
-    // Body không phải JSON thì soi thẳng chuỗi thô bên dưới.
   }
-  const haystack = `${ids} ${body}`;
-  if (/per[_\s-]?minute/i.test(haystack)) return 'minute';
+  return ids.trim();
+}
+
+/** Endpoint tương thích OpenAI trả `[{error}]`, API gốc trả `{error}`. */
+function parseErrorRoots(body: string): ErrorRoot[] {
+  try {
+    const parsed = JSON.parse(body) as ErrorRoot | ErrorRoot[];
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
+  }
+}
+
+interface ErrorRoot {
+  error?: { details?: { violations?: { quotaId?: string; quotaMetric?: string }[] }[] };
+}
+
+export function quotaScope(body: string): 'day' | 'minute' {
+  const haystack = `${quotaIds(body)} ${body}`;
+  if (/per[_s-]?minute/i.test(haystack)) return 'minute';
   // Không nói rõ thì coi như hết ngày: tụt bậc còn dùng được, chứ gọi lại
   // cùng model chỉ đốt thêm quota rồi vẫn 429.
   return 'day';
@@ -288,10 +305,11 @@ export function createRewriteClient(
   };
 
   const killRung = (rung: RungState, why: string): void => {
+    if (rung.dead) return; // hai luồng cùng đụng 429 của một bậc
     rung.dead = true;
     const next = usable();
     console.warn(
-      `rewrite: bậc ${rung.model ?? 'mặc định'} dừng (${why.slice(0, 200)})` +
+      `rewrite: bậc ${rung.model ?? 'mặc định'} dừng (${oneLine(why)})` +
         (next ? `, tụt xuống ${next.model}` : ', hết thang'),
     );
   };
@@ -327,13 +345,13 @@ export function createRewriteClient(
       }
 
       if (!response.ok) {
-        const detail = (await response.text().catch(() => '')).slice(0, 2000);
-        lastError = new Error(`provider trả HTTP ${response.status}: ${detail.slice(0, 300)}`);
+        const detail = await response.text().catch(() => '');
+        lastError = new Error(`provider trả HTTP ${response.status}: ${oneLine(detail).slice(0, 300)}`);
 
         if (response.status === 429) {
           if (quotaScope(detail) === 'day') {
             rung.remaining = 0;
-            throw new RungDeadError(`429 hết hạn mức ngày: ${detail.slice(0, 200)}`);
+            throw new RungDeadError(`429 hết hạn mức ngày, quotaId=${quotaIds(detail) || 'không rõ'}`);
           }
           // Vượt trần phút: chờ rồi gọi lại chính bậc này.
           if (!rateLimitWarned) {
@@ -348,7 +366,7 @@ export function createRewriteClient(
         }
 
         if (isModelUnavailable(response.status, detail)) {
-          throw new RungDeadError(`HTTP ${response.status}: ${detail.slice(0, 200)}`);
+          throw new RungDeadError(`HTTP ${response.status}: ${oneLine(detail).slice(0, 200)}`);
         }
         if (!RETRY_STATUS.has(response.status)) throw lastError;
         await sleep(retryDelay(attempt, response.headers.get('retry-after')));

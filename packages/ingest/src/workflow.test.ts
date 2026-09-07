@@ -32,9 +32,9 @@ describe('workflow ingest', () => {
     expect(keys).toContain('REWRITE_PROVIDER');
     expect(keys).toContain('GEMINI_API_KEY');
     expect(keys).toContain('BAI_API_KEY');
-    // Đổi model là đổi trần quota, phải làm được bằng biến repo chứ không
+    // Đổi thang model là đổi trần quota, phải làm được bằng biến repo chứ không
     // phải sửa code rồi deploy lại.
-    expect(keys).toContain('GEMINI_MODEL');
+    expect(keys).toContain('GEMINI_MODELS');
     expect(keys).toContain('REWRITE_MAX_PER_RUN');
   });
 

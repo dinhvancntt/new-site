@@ -8,6 +8,7 @@ import {
   createRewriteClient,
   DEFAULT_MODEL_LADDER,
   ladderBudget,
+  quotaScope,
   resolveModelLadder,
   RewriteQuotaError,
   paceIntervalMs,
@@ -329,6 +330,8 @@ describe('thang model dự phòng', () => {
     expect(rungs.map((rung) => rung.model)).toEqual(DEFAULT_MODEL_LADDER);
     expect(rungs[0]).toMatchObject({ model: 'gemini-3.6-flash', rpm: 5, rpd: 20 });
     expect(rungs.at(-1)).toMatchObject({ rpm: 15, rpd: 500 });
+    // Google đã gỡ 2.5 với project mới: giữ trong thang chỉ đốt 1 request/run.
+    expect(rungs.map((rung) => rung.model)).not.toContain('gemini-2.5-flash');
   });
 
   test('GEMINI_MODELS ghi đè thang, model lạ lấy hạn mức chặt nhất', () => {
@@ -341,7 +344,7 @@ describe('thang model dự phòng', () => {
   });
 
   test('budget là tổng hạn mức ngày của cả thang', () => {
-    expect(ladderBudget(resolveModelLadder({}))).toBe(18 + 18 + 18 + 450 + 450);
+    expect(ladderBudget(resolveModelLadder({}))).toBe(18 + 18 + 450 + 450);
   });
 
   test('hết quota ngày thì viết lại cùng bài bằng model bậc dưới', async () => {
@@ -422,5 +425,96 @@ describe('thang model dự phòng', () => {
 
     await expect(client.complete(req)).rejects.toBeInstanceOf(RewriteQuotaError);
     expect(modelsSent(fetchMock)).toEqual(['bac-1', 'bac-2']);
+  });
+});
+
+describe('đọc lý do 429 từ body thật của Google', () => {
+  // Endpoint tương thích OpenAI trả lỗi bọc trong mảng và in đẹp nhiều dòng.
+  const wrapped = (quotaId: string) =>
+    JSON.stringify(
+      [
+        {
+          error: {
+            code: 429,
+            message: 'You exceeded your current quota, please check your plan and billing details.',
+            status: 'RESOURCE_EXHAUSTED',
+            details: [
+              {
+                '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+                violations: [{ quotaId, quotaMetric: 'generativelanguage.googleapis.com/x' }],
+              },
+              { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '31s' },
+            ],
+          },
+        },
+      ],
+      null,
+      2,
+    );
+
+  test('vượt trần phút nằm sâu trong mảng vẫn đọc ra được', () => {
+    expect(quotaScope(wrapped('GenerateRequestsPerMinutePerProjectPerModel-FreeTier'))).toBe(
+      'minute',
+    );
+  });
+
+  test('vượt trần ngày đọc ra day', () => {
+    expect(quotaScope(wrapped('GenerateRequestsPerDayPerProjectPerModel-FreeTier'))).toBe('day');
+  });
+
+  test('body lạ thì chọn day cho an toàn', () => {
+    expect(quotaScope('502 Bad Gateway')).toBe('day');
+  });
+
+  test('lý do nằm ngoài 2000 ký tự đầu vẫn phải đọc đúng', async () => {
+    // Client cắt body để log; cắt trước khi đọc lý do là hiểu sai 429.
+    const long = JSON.stringify([
+      {
+        error: {
+          code: 429,
+          message: 'quota '.repeat(500),
+          details: [
+            {
+              '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+              violations: [{ quotaId: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier' }],
+            },
+          ],
+        },
+      },
+    ]);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(long, { status: 429, headers: { 'retry-after': '0' } }))
+      .mockResolvedValueOnce(okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createRewriteClient('k', 'https://p/v1', [
+      { model: 'bac-1', rpm: 600, rpd: 20 },
+      { model: 'bac-2', rpm: 600, rpd: 500 },
+    ]);
+    await client.complete(buildRewriteRequest(input, 'bac-1'));
+
+    expect(modelsSent(fetchMock)).toEqual(['bac-1', 'bac-1']);
+  });
+
+  test('mỗi bậc chỉ báo dừng một lần dù nhiều luồng cùng đụng 429', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(wrapped('GenerateRequestsPerDayPerProjectPerModel-FreeTier'), { status: 429 })),
+    );
+
+    const client = createRewriteClient('k', 'https://p/v1', [
+      { model: 'bac-1', rpm: 600, rpd: 20 },
+      { model: 'bac-2', rpm: 600, rpd: 500 },
+    ]);
+    const req = buildRewriteRequest(input, 'bac-1');
+    await Promise.allSettled([client.complete(req), client.complete(req)]);
+
+    const lines = warn.mock.calls.map((call) => String(call[0]));
+    expect(lines.filter((line) => line.includes('bac-1'))).toHaveLength(1);
+    // Log một dòng: body nhiều dòng làm log Actions vỡ thành nhiều entry.
+    expect(lines.every((line) => !line.includes(String.fromCharCode(10)))).toBe(true);
+    warn.mockRestore();
   });
 });
