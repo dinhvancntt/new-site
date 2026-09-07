@@ -29,6 +29,12 @@ export type IngestResult = { runId: string; counters: RunCounters };
 
 const DEFAULT_CONCURRENCY = 3;
 
+/** Cắt ngắn thông điệp lỗi để log diagnostics không phình. */
+function errorMessage(error: unknown): string {
+  const text = error instanceof Error ? error.message : String(error);
+  return text.slice(0, 200);
+}
+
 /** Chỉ tra những khoá thực sự vừa lấy về, thay vì kéo toàn bộ bảng. */
 async function loadExistingKeys(db: Db, candidates: FetchedArticle[]): Promise<ExistingKeys> {
   if (candidates.length === 0) return { sourceIds: new Set(), titleHashes: new Set() };
@@ -88,11 +94,17 @@ export async function runIngest(
   };
 
   const candidates: FetchedArticle[] = [];
+  // Gom lỗi theo giai đoạn để log một dòng diagnostics cuối run — trước đây
+  // catch nuốt lỗi nên Actions chỉ thấy counters mà không biết vì sao fail.
+  const fetchErrors: Record<string, string> = {};
+  const rewriteReasons: Record<string, number> = {};
+  const sampleErrors: string[] = [];
   for (const category of options.categories) {
     try {
       candidates.push(...(await deps.fetchCategory(category)));
-    } catch {
+    } catch (error) {
       counters.failed += 1;
+      fetchErrors[category] = errorMessage(error);
     }
   }
   counters.fetched = candidates.length;
@@ -117,6 +129,7 @@ export async function runIngest(
       });
       if (!result.ok) {
         counters.failed += 1;
+        rewriteReasons[result.reason] = (rewriteReasons[result.reason] ?? 0) + 1;
         return;
       }
 
@@ -145,11 +158,16 @@ export async function runIngest(
 
       if (stored) counters.written += 1;
       else counters.skippedDup += 1;
-    } catch {
+    } catch (error) {
       // Một bài hỏng không được kéo cả mẻ xuống — xem spec Bước 6.
       counters.failed += 1;
+      if (sampleErrors.length < 5) sampleErrors.push(errorMessage(error));
     }
   });
+
+  if (counters.failed > 0) {
+    console.error(`run ${runId} diagnostics`, JSON.stringify({ fetchErrors, rewriteReasons, sampleErrors }));
+  }
 
   await finishRun(deps.db, runId, counters);
   return { runId, counters };
