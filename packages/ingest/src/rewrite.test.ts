@@ -61,6 +61,12 @@ test('provider switches to Gemini with model and base URL defaults', () => {
   });
 });
 
+test('provider value tolerates case and surrounding whitespace from UI paste', () => {
+  expect(resolveRewriteConfig({ REWRITE_PROVIDER: ' Gemini ' }).provider).toBe('gemini');
+  expect(resolveRewriteConfig({ REWRITE_PROVIDER: 'GEMINI' }).provider).toBe('gemini');
+  expect(resolveRewriteConfig({ REWRITE_PROVIDER: 'bai' }).provider).toBe('bai');
+});
+
 test('provider honours GEMINI_MODEL and GEMINI_BASE_URL overrides', () => {
   const config = resolveRewriteConfig({
     REWRITE_PROVIDER: 'gemini',

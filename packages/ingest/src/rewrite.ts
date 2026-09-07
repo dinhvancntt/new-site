@@ -87,7 +87,9 @@ export type RewriteConfig = {
  * REWRITE_PROVIDER=gemini + GEMINI_API_KEY (đổi model bằng GEMINI_MODEL).
  */
 export function resolveRewriteConfig(env: Record<string, string | undefined> = process.env): RewriteConfig {
-  if (env['REWRITE_PROVIDER'] === 'gemini') {
+  // Chuẩn hoá vì giá trị paste từ UI dễ dính hoa/thường hoặc khoảng trắng.
+  const raw = (env['REWRITE_PROVIDER'] ?? '').trim().toLowerCase();
+  if (raw === 'gemini') {
     return {
       provider: 'gemini',
       apiKey: env['GEMINI_API_KEY'],

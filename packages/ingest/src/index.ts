@@ -19,6 +19,7 @@ export async function main(): Promise<number> {
   const newsdataKey = requireEnv('NEWSDATA_API_KEY');
   const rewriteConfig = resolveRewriteConfig();
   requireEnv(rewriteConfig.provider === 'gemini' ? 'GEMINI_API_KEY' : 'BAI_API_KEY');
+  console.log(`rewrite provider: ${rewriteConfig.provider} (${rewriteConfig.model})`);
   const db = createDb(requireEnv('DATABASE_URL'));
   const rewriteDeps = createRewriteClient(rewriteConfig.apiKey, rewriteConfig.baseUrl);
 
