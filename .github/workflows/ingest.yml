@@ -29,5 +29,10 @@ jobs:
       - run: npm run ingest
         env:
           NEWSDATA_API_KEY: ${{ secrets.NEWSDATA_API_KEY }}
-          BAI_API_KEY: ${{ secrets.BAI_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Bỏ trống REWRITE_PROVIDER thì code tự chọn Gemini khi có key.
+          # Thiếu dòng GEMINI_API_KEY ở đây là runner luôn rơi về bai, dù
+          # secret Gemini đã nằm trên repo.
+          REWRITE_PROVIDER: ${{ secrets.REWRITE_PROVIDER }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          BAI_API_KEY: ${{ secrets.BAI_API_KEY }}
