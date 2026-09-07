@@ -128,23 +128,30 @@ export type RewriteConfig = {
  * Chọn provider viết lại qua biến môi trường, mặc định giữ BAI cũ:
  * REWRITE_PROVIDER=gemini + GEMINI_API_KEY (đổi model bằng GEMINI_MODEL).
  */
+// GitHub Actions truyền biến repo chưa đặt thành chuỗi rỗng, nên `??` không
+// đủ để rơi về mặc định. Rỗng hoặc chỉ khoảng trắng đều coi như chưa đặt.
+function optional(env: Record<string, string | undefined>, name: string): string | undefined {
+  const value = (env[name] ?? '').trim();
+  return value === '' ? undefined : value;
+}
+
 export function resolveRewriteConfig(env: Record<string, string | undefined> = process.env): RewriteConfig {
   // Chuẩn hoá vì giá trị paste từ UI dễ dính hoa/thường hoặc khoảng trắng.
   // Nếu không ghi rõ mà có key Gemini thì dùng Gemini luôn — đỡ phụ thuộc
   // vào một secret cấu hình dễ gõ sai.
-  const raw = (env['REWRITE_PROVIDER'] ?? '').trim().toLowerCase();
+  const raw = (optional(env, 'REWRITE_PROVIDER') ?? '').toLowerCase();
   if (raw === 'bai') {
-    return { provider: 'bai', apiKey: env['BAI_API_KEY'], baseUrl: BAI_BASE_URL, model: REWRITE_MODEL };
+    return { provider: 'bai', apiKey: optional(env, 'BAI_API_KEY'), baseUrl: BAI_BASE_URL, model: REWRITE_MODEL };
   }
-  if (raw === 'gemini' || (!raw && env['GEMINI_API_KEY'])) {
+  if (raw === 'gemini' || (!raw && optional(env, 'GEMINI_API_KEY'))) {
     return {
       provider: 'gemini',
-      apiKey: env['GEMINI_API_KEY'],
-      baseUrl: env['GEMINI_BASE_URL'] ?? GEMINI_BASE_URL,
-      model: env['GEMINI_MODEL'] ?? GEMINI_MODEL,
+      apiKey: optional(env, 'GEMINI_API_KEY'),
+      baseUrl: optional(env, 'GEMINI_BASE_URL') ?? GEMINI_BASE_URL,
+      model: optional(env, 'GEMINI_MODEL') ?? GEMINI_MODEL,
     };
   }
-  return { provider: 'bai', apiKey: env['BAI_API_KEY'], baseUrl: BAI_BASE_URL, model: REWRITE_MODEL };
+  return { provider: 'bai', apiKey: optional(env, 'BAI_API_KEY'), baseUrl: BAI_BASE_URL, model: REWRITE_MODEL };
 }
 
 // 429 không nằm ở đây: trần free tier tính theo request, nên thử lại chỉ đốt

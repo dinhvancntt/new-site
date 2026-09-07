@@ -268,3 +268,15 @@ describe('nhịp gọi và budget suy ra từ trần model', () => {
     expect(budgetFor('gemini-3.5-flash-lite', 'rác')).toBe(450);
   });
 });
+
+test('biến rỗng từ Actions không được ghi đè model và base URL', () => {
+  // Biến repo chưa đặt thì runner truyền chuỗi rỗng, không phải undefined.
+  const config = resolveRewriteConfig({
+    GEMINI_API_KEY: 'k',
+    GEMINI_MODEL: '',
+    GEMINI_BASE_URL: '   ',
+  });
+
+  expect(config.model).toBe(GEMINI_MODEL);
+  expect(config.baseUrl).toBe(GEMINI_BASE_URL);
+});
