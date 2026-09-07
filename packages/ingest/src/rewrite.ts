@@ -25,7 +25,49 @@ export interface RewrittenArticle {
 
 export type RewriteResult =
   | { ok: true; article: RewrittenArticle }
-  | { ok: false; reason: 'insufficient' | 'refusal' | 'error' };
+  | { ok: false; reason: 'insufficient' | 'refusal' | 'error' | 'quota' };
+
+/**
+ * Trần free tier đọc từ panel Rate Limit của AI Studio (RPM = request/phút,
+ * RPD = request/ngày). Model lạ thì lấy mức chặt nhất để không đốt quota vào
+ * những lần thử vô ích.
+ */
+export const GEMINI_LIMITS: Record<string, { rpm: number; rpd: number }> = {
+  'gemini-3.6-flash': { rpm: 5, rpd: 20 },
+  'gemini-3.5-flash': { rpm: 5, rpd: 20 },
+  'gemini-2.5-flash': { rpm: 5, rpd: 20 },
+  'gemini-3.5-flash-lite': { rpm: 15, rpd: 500 },
+  'gemini-3.1-flash-lite': { rpm: 15, rpd: 500 },
+};
+
+export const CONSERVATIVE_LIMIT = { rpm: 5, rpd: 20 };
+
+export function limitsFor(model: string): { rpm: number; rpd: number } {
+  return GEMINI_LIMITS[model] ?? CONSERVATIVE_LIMIT;
+}
+
+/** Chừa 10% biên vì đồng hồ RPM của Google không trùng đồng hồ của ta. */
+const SAFETY = 1.1;
+
+/** Khoảng cách tối thiểu giữa hai request để nằm dưới trần RPM. */
+export function paceIntervalMs(model: string): number {
+  return Math.ceil((60_000 / limitsFor(model).rpm) * SAFETY);
+}
+
+/** Số bài tối đa gọi model trong một run, chừa biên dưới trần RPD. */
+export function budgetFor(model: string, override?: string): number {
+  const asked = Number(override);
+  if (Number.isInteger(asked) && asked > 0) return asked;
+  return Math.floor(limitsFor(model).rpd * 0.9);
+}
+
+/** Hết quota là chuyện thường của free tier, không phải bài viết lỗi. */
+export class RewriteQuotaError extends Error {
+  constructor(detail: string) {
+    super(`hết quota provider: ${detail}`);
+    this.name = 'RewriteQuotaError';
+  }
+}
 
 const SYSTEM_PROMPT = `Bạn là biên tập viên viết lại tin quốc tế cho một trang tin song ngữ Việt - Anh.
 
@@ -105,7 +147,9 @@ export function resolveRewriteConfig(env: Record<string, string | undefined> = p
   return { provider: 'bai', apiKey: env['BAI_API_KEY'], baseUrl: BAI_BASE_URL, model: REWRITE_MODEL };
 }
 
-const RETRY_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+// 429 không nằm ở đây: trần free tier tính theo request, nên thử lại chỉ đốt
+// thêm quota rồi vẫn 429. Gặp 429 là dừng, để pipeline bỏ qua phần còn lại.
+const RETRY_STATUS = new Set([408, 409, 425, 500, 502, 503, 504]);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -122,13 +166,26 @@ function retryDelay(attempt: number, retryAfter: string | null): number {
 export function createRewriteClient(
   apiKey = process.env['BAI_API_KEY'],
   baseUrl = BAI_BASE_URL,
+  minIntervalMs = 0,
 ): RewriteDeps {
+  // Nhịp gọi tối thiểu, giữ theo từng client: hai bài chạy song song vẫn phải
+  // nối đuôi nhau nên tổng request/phút không vượt trần RPM.
+  let nextSlot = 0;
+  const takeSlot = async (): Promise<void> => {
+    if (minIntervalMs <= 0) return;
+    const now = Date.now();
+    const startAt = Math.max(now, nextSlot);
+    nextSlot = startAt + minIntervalMs;
+    if (startAt > now) await sleep(startAt - now);
+  };
+
   return {
     complete: async (request) => {
       let lastError: Error = new Error('không gọi được provider');
 
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
         if (attempt > 0) await sleep(retryDelay(attempt - 1, null));
+        await takeSlot();
 
         let response: Response;
         try {
@@ -149,11 +206,14 @@ export function createRewriteClient(
         if (!response.ok) {
           const detail = (await response.text().catch(() => '')).slice(0, 300);
           lastError = new Error(`provider trả HTTP ${response.status}: ${detail}`);
-          if (response.status === 429 && !rateLimitWarned) {
-            rateLimitWarned = true;
-            console.warn(
-              `rewrite rate limited (HTTP 429, retry-after=${response.headers.get('retry-after') ?? 'none'})`,
-            );
+          if (response.status === 429) {
+            if (!rateLimitWarned) {
+              rateLimitWarned = true;
+              console.warn(
+                `rewrite hết quota (HTTP 429, retry-after=${response.headers.get('retry-after') ?? 'none'}): ${detail}`,
+              );
+            }
+            throw new RewriteQuotaError(detail);
           }
           if (!RETRY_STATUS.has(response.status)) throw lastError;
           await sleep(retryDelay(attempt, response.headers.get('retry-after')));
@@ -231,6 +291,7 @@ export async function rewriteArticle(
   try {
     completion = await deps.complete(buildRewriteRequest(input, model));
   } catch (error) {
+    if (error instanceof RewriteQuotaError) return { ok: false, reason: 'quota' };
     // Chỉ log lỗi provider đầu tiên mỗi run để Actions đọc được HTTP status,
     // các bài sau fail cùng nguyên nhân thì counters đã đủ.
     logProviderErrorOnce(error);

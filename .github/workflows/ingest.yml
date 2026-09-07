@@ -36,3 +36,7 @@ jobs:
           REWRITE_PROVIDER: ${{ secrets.REWRITE_PROVIDER }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           BAI_API_KEY: ${{ secrets.BAI_API_KEY }}
+          # Dùng biến repo (không phải secret) để log không bị che tên model —
+          # nhịp gọi và budget suy ra từ trần free tier của đúng model này.
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          REWRITE_MAX_PER_RUN: ${{ vars.REWRITE_MAX_PER_RUN }}

@@ -180,3 +180,41 @@ test('duplicates inside one fetch batch are only written once', async () => {
     .where(and(eq(articles.sourceName, 'Reuters'), like(articles.sourceId, 'test-pipe-%')));
   expect(rows).toHaveLength(1);
 });
+
+test('budget chặn số bài viết lại trong một run, phần dư không phải lỗi', async () => {
+  let calls = 0;
+  const d = deps({
+    fetchCategory: async () => [fetched(), fetched(), fetched()],
+    rewrite: async () => {
+      calls += 1;
+      return rewritten;
+    },
+  });
+
+  const result = await runIngest(d, { categories: ['business'], maxRewrites: 2 });
+  createdRuns.push(result.runId);
+
+  expect(calls).toBe(2);
+  expect(result.counters.written).toBe(2);
+  expect(result.counters.failed).toBe(0);
+  expect(result.skipped.budget).toBe(1);
+});
+
+test('gặp 429 thì dừng gọi provider và không tính bài nào là lỗi', async () => {
+  let calls = 0;
+  const d = deps({
+    fetchCategory: async () => [fetched(), fetched(), fetched()],
+    rewrite: async () => {
+      calls += 1;
+      return { ok: false, reason: 'quota' } satisfies RewriteResult;
+    },
+  });
+
+  const result = await runIngest(d, { categories: ['business'], concurrency: 1 });
+  createdRuns.push(result.runId);
+
+  expect(calls).toBe(1);
+  expect(result.counters.failed).toBe(0);
+  expect(result.counters.written).toBe(0);
+  expect(result.skipped.quota).toBe(3);
+});

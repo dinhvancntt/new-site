@@ -1,8 +1,11 @@
-import { test, expect } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
   GEMINI_BASE_URL,
   GEMINI_MODEL,
   buildRewriteRequest,
+  budgetFor,
+  createRewriteClient,
+  paceIntervalMs,
   resolveRewriteConfig,
   rewriteArticle,
   type RewriteInput,
@@ -197,4 +200,71 @@ test('reports an error when the API call throws', async () => {
   });
 
   expect(result).toEqual({ ok: false, reason: 'error' });
+});
+
+// --- Quota free tier: 5 RPM / 20 RPD (Gemini 3.6 Flash) ---
+
+describe('client trước trần quota', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const req = buildRewriteRequest(
+    { title: 't', body: 'x'.repeat(600), sourceName: 'Reuters', category: 'world' },
+    'gemini-3.6-flash',
+  );
+
+  test('429 báo hết quota chứ không thử lại — retry chỉ đốt thêm request', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response('{"error":{"code":429,"message":"quota exceeded"}}', { status: 429 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createRewriteClient('k', 'https://p/v1');
+    const result = await rewriteArticle(
+      { title: 't', body: 'x'.repeat(600), sourceName: 'Reuters', category: 'world' },
+      client,
+    );
+
+    expect(result).toEqual({ ok: false, reason: 'quota' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('giãn nhịp giữa hai lần gọi để nằm dưới trần request/phút', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({ choices: [{ finish_reason: 'stop', message: { content: '{}' } }] }),
+      ),
+    );
+
+    const client = createRewriteClient('k', 'https://p/v1', 150);
+    const startedAt = Date.now();
+    await client.complete(req);
+    await client.complete(req);
+
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(140);
+  });
+});
+
+describe('nhịp gọi và budget suy ra từ trần model', () => {
+  test('3.6 Flash: 5 RPM / 20 RPD', () => {
+    expect(paceIntervalMs('gemini-3.6-flash')).toBeGreaterThanOrEqual(12_000);
+    expect(budgetFor('gemini-3.6-flash')).toBe(18);
+  });
+
+  test('3.5 Flash Lite: 15 RPM / 500 RPD nên chạy được cả mẻ 50 bài', () => {
+    expect(paceIntervalMs('gemini-3.5-flash-lite')).toBeLessThanOrEqual(4_500);
+    expect(budgetFor('gemini-3.5-flash-lite')).toBeGreaterThanOrEqual(50);
+  });
+
+  test('model lạ thì lấy trần chặt nhất', () => {
+    expect(budgetFor('gemini-9-experimental')).toBe(18);
+  });
+
+  test('env ghi đè được budget', () => {
+    expect(budgetFor('gemini-3.5-flash-lite', '12')).toBe(12);
+    expect(budgetFor('gemini-3.5-flash-lite', 'rác')).toBe(450);
+  });
 });

@@ -36,25 +36,29 @@ function storable(over: {
 
 // Ba bài cố định dùng chung cho cả tệp: dựng lại trước mỗi test sẽ tốn hàng
 // chục giây gọi Neon mà không thêm độ tin cậy nào — không test nào ghi thêm.
+//
+// Ngày phát hành đặt ở tương lai xa: pipeline thật cũng ghi vào cùng cơ sở dữ
+// liệu này, mỗi ngày vài chục bài mới hơn. Nếu fixture dùng ngày quá khứ thì
+// đến lúc nào đó nó rơi ra khỏi cửa sổ `limit` và test vỡ dù code vẫn đúng.
 const fixtures = [
   storable({
     vi: 'Bão số ba đổ bộ miền Trung',
     en: 'Typhoon makes landfall in central region',
     category: 'world',
-    publishedAt: new Date('2026-08-28T00:00:00Z'),
+    publishedAt: new Date('2099-01-01T00:00:00Z'),
   }),
   storable({
     vi: 'Ngân hàng trung ương hạ lãi suất điều hành',
     en: 'Central bank cuts its policy rate',
     category: 'business',
-    publishedAt: new Date('2026-08-29T00:00:00Z'),
+    publishedAt: new Date('2099-01-02T00:00:00Z'),
     summaryVi: 'Quyết định có hiệu lực từ tuần sau.',
   }),
   storable({
     vi: 'Hãng xe điện mở nhà máy mới',
     en: 'Carmaker opens a new plant',
     category: 'business',
-    publishedAt: new Date('2026-08-30T00:00:00Z'),
+    publishedAt: new Date('2099-01-03T00:00:00Z'),
   }),
 ];
 
@@ -142,7 +146,7 @@ test('an article page gets the body and the attribution it must show', async () 
     category: 'business',
   });
   expect(article!.body).toContain('Đoạn một.');
-  expect(article!.publishedAt.toISOString()).toBe('2026-08-29T00:00:00.000Z');
+  expect(article!.publishedAt.toISOString()).toBe('2099-01-02T00:00:00.000Z');
 });
 
 test('an unknown slug is not found rather than an error', async () => {

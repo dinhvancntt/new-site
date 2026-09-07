@@ -23,9 +23,23 @@ export type PipelineOptions = {
   categories: string[];
   /** Số bài viết lại song song — mỗi bài là một lần gọi model tốn nhiều giây. */
   concurrency?: number;
+  /**
+   * Trần số bài gọi model trong một run, để không vượt quota ngày của free
+   * tier. Bài dư nằm lại nguồn và vào lượt chạy sau.
+   */
+  maxRewrites?: number;
 };
 
-export type IngestResult = { runId: string; counters: RunCounters };
+/**
+ * `skipped` là những bài chủ động không gọi model (hết budget/hết quota) —
+ * tách khỏi `counters.failed` vì đó là vận hành bình thường, không phải run
+ * hỏng, nên không được kéo workflow sang đỏ.
+ */
+export type IngestResult = {
+  runId: string;
+  counters: RunCounters;
+  skipped: { budget: number; quota: number };
+};
 
 const DEFAULT_CONCURRENCY = 3;
 
@@ -123,11 +137,29 @@ export async function runIngest(
   const fresh = selectNewArticles(candidates, existing);
   counters.skippedDup = candidates.length - fresh.length;
 
+  const skipped = { budget: 0, quota: 0 };
+  // Đếm số bài đã nhận suất gọi model; kiểm trước khi extract để không tốn
+  // lượt tải trang cho bài chắc chắn không được viết lại.
+  let granted = 0;
+  let quotaExhausted = false;
+
   await forEachLimited(fresh, options.concurrency ?? DEFAULT_CONCURRENCY, async (article) => {
     try {
+      if (quotaExhausted) {
+        skipped.quota += 1;
+        return;
+      }
+      if (options.maxRewrites !== undefined && granted >= options.maxRewrites) {
+        skipped.budget += 1;
+        return;
+      }
+      granted += 1;
+
       const extracted = await deps.extract(article.link, article);
       if (!extracted) {
         counters.skippedExtract += 1;
+        // Không gọi model thì trả lại suất cho bài sau.
+        granted -= 1;
         return;
       }
 
@@ -138,8 +170,15 @@ export async function runIngest(
         category: article.category,
       });
       if (!result.ok) {
-        counters.failed += 1;
         rewriteReasons[result.reason] = (rewriteReasons[result.reason] ?? 0) + 1;
+        if (result.reason === 'quota') {
+          // Trần theo ngày: những bài sau cũng sẽ 429, dừng để dành quota cho
+          // lượt chạy kế tiếp thay vì đốt hết vào lỗi.
+          quotaExhausted = true;
+          skipped.quota += 1;
+          return;
+        }
+        counters.failed += 1;
         return;
       }
 
@@ -175,10 +214,13 @@ export async function runIngest(
     }
   });
 
-  if (counters.failed > 0) {
-    console.error(`run ${runId} diagnostics`, JSON.stringify({ fetchErrors, rewriteReasons, sampleErrors }));
+  if (counters.failed > 0 || skipped.quota > 0) {
+    console.error(
+      `run ${runId} diagnostics`,
+      JSON.stringify({ fetchErrors, rewriteReasons, sampleErrors, skipped }),
+    );
   }
 
   await finishRun(deps.db, runId, counters);
-  return { runId, counters };
+  return { runId, counters, skipped };
 }

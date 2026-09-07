@@ -4,7 +4,13 @@ import { exitCodeFor } from './exit-code.js';
 import { extractArticle } from './extract.js';
 import { fetchCategory } from './newsdata.js';
 import { runIngest, defaultConcurrency } from './pipeline.js';
-import { createRewriteClient, resolveRewriteConfig, rewriteArticle } from './rewrite.js';
+import {
+  budgetFor,
+  createRewriteClient,
+  paceIntervalMs,
+  resolveRewriteConfig,
+  rewriteArticle,
+} from './rewrite.js';
 
 export const CATEGORIES = ['world', 'business', 'technology', 'sports', 'health'] as const;
 
@@ -19,22 +25,36 @@ export async function main(): Promise<number> {
   const newsdataKey = requireEnv('NEWSDATA_API_KEY');
   const rewriteConfig = resolveRewriteConfig();
   requireEnv(rewriteConfig.provider === 'gemini' ? 'GEMINI_API_KEY' : 'BAI_API_KEY');
-  console.log(`rewrite provider: ${rewriteConfig.provider} (${rewriteConfig.model})`);
+  const gemini = rewriteConfig.provider === 'gemini';
+  // Trần free tier tính theo request: giãn nhịp và chặn budget ngay từ đây,
+  // vì vượt trần thì provider trả 429 và cả mẻ còn lại thành vô ích.
+  const paceMs = gemini ? paceIntervalMs(rewriteConfig.model) : 0;
+  const maxRewrites = gemini
+    ? budgetFor(rewriteConfig.model, process.env['REWRITE_MAX_PER_RUN'])
+    : undefined;
+  console.log(
+    `rewrite provider: ${rewriteConfig.provider} (${rewriteConfig.model})` +
+      (gemini ? ` pace=${paceMs}ms budget=${maxRewrites}` : ''),
+  );
   const db = createDb(requireEnv('DATABASE_URL'));
-  const rewriteDeps = createRewriteClient(rewriteConfig.apiKey, rewriteConfig.baseUrl);
+  const rewriteDeps = createRewriteClient(rewriteConfig.apiKey, rewriteConfig.baseUrl, paceMs);
 
   try {
-    const { runId, counters } = await runIngest(
+    const { runId, counters, skipped } = await runIngest(
       {
         db,
         fetchCategory: (category) => fetchCategory({ apiKey: newsdataKey, category }),
         extract: (url) => extractArticle(url),
         rewrite: (input) => rewriteArticle(input, rewriteDeps, rewriteConfig.model),
       },
-      { categories: [...CATEGORIES], concurrency: defaultConcurrency(rewriteConfig.provider) },
+      {
+        categories: [...CATEGORIES],
+        concurrency: defaultConcurrency(rewriteConfig.provider),
+        maxRewrites,
+      },
     );
 
-    console.log(`run ${runId}`, JSON.stringify(counters));
+    console.log(`run ${runId}`, JSON.stringify({ ...counters, skipped }));
     return exitCodeFor(counters);
   } finally {
     await db.$client.end();
