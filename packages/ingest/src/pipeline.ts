@@ -3,7 +3,7 @@ import { articles, type Db } from '@news/db';
 import { selectNewArticles, titleHash, type ExistingKeys } from './dedupe.js';
 import type { ExtractedArticle } from './extract.js';
 import type { FetchedArticle } from './newsdata.js';
-import type { RewriteResult } from './rewrite.js';
+import type { RewriteProvider, RewriteResult } from './rewrite.js';
 import { finishRun, startRun, storeArticle } from './store.js';
 import type { RunCounters } from './store.js';
 
@@ -28,6 +28,16 @@ export type PipelineOptions = {
 export type IngestResult = { runId: string; counters: RunCounters };
 
 const DEFAULT_CONCURRENCY = 3;
+
+/**
+ * Số luồng viết lại mặc định theo provider. Quota free của Gemini siết theo
+ * request/phút (con số thay đổi theo model/tài khoản — xem panel quota trong
+ * AI Studio, không hardcode ở đây): chạy 2 luồng, mỗi bài ~20-40 giây thì
+ * ~3-6 request/phút, nằm dưới trần mà vẫn xong ~30 bài trong ~10 phút.
+ */
+export function defaultConcurrency(provider: RewriteProvider): number {
+  return provider === 'gemini' ? 2 : DEFAULT_CONCURRENCY;
+}
 
 /** Cắt ngắn thông điệp lỗi để log diagnostics không phình. */
 function errorMessage(error: unknown): string {

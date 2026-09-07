@@ -3,7 +3,7 @@ import { and, eq, like } from 'drizzle-orm';
 import { createDb, articles, articleContents, ingestRuns } from '@news/db';
 import type { FetchedArticle } from './newsdata.js';
 import type { RewriteResult } from './rewrite.js';
-import { runIngest, type PipelineDeps } from './pipeline.js';
+import { runIngest, defaultConcurrency, type PipelineDeps } from './pipeline.js';
 
 const db = createDb();
 const createdRuns: string[] = [];
@@ -58,6 +58,10 @@ async function run(d: PipelineDeps) {
   createdRuns.push(result.runId);
   return result;
 }
+
+test('defaultConcurrency chừa biên an toàn cho provider free siết theo phút', () => {
+  expect(defaultConcurrency('gemini')).toBeLessThan(defaultConcurrency('bai'));
+});
 
 test('a fetched article ends up written with both languages', async () => {
   const article = fetched();

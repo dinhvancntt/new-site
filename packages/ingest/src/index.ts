@@ -3,7 +3,7 @@ import { createDb } from '@news/db';
 import { exitCodeFor } from './exit-code.js';
 import { extractArticle } from './extract.js';
 import { fetchCategory } from './newsdata.js';
-import { runIngest } from './pipeline.js';
+import { runIngest, defaultConcurrency } from './pipeline.js';
 import { createRewriteClient, resolveRewriteConfig, rewriteArticle } from './rewrite.js';
 
 export const CATEGORIES = ['world', 'business', 'technology', 'sports', 'health'] as const;
@@ -30,7 +30,7 @@ export async function main(): Promise<number> {
         extract: (url) => extractArticle(url),
         rewrite: (input) => rewriteArticle(input, rewriteDeps, rewriteConfig.model),
       },
-      { categories: [...CATEGORIES] },
+      { categories: [...CATEGORIES], concurrency: defaultConcurrency(rewriteConfig.provider) },
     );
 
     console.log(`run ${runId}`, JSON.stringify(counters));

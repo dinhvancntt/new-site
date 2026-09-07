@@ -102,6 +102,9 @@ const RETRY_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Log 1 lần mỗi run khi chạm trần rate limit để Actions thấy được. */
+let rateLimitWarned = false;
+
 /** Backoff mũ, ưu tiên Retry-After của server. */
 function retryDelay(attempt: number, retryAfter: string | null): number {
   const seconds = Number(retryAfter);
@@ -139,6 +142,12 @@ export function createRewriteClient(
         if (!response.ok) {
           const detail = (await response.text().catch(() => '')).slice(0, 300);
           lastError = new Error(`provider trả HTTP ${response.status}: ${detail}`);
+          if (response.status === 429 && !rateLimitWarned) {
+            rateLimitWarned = true;
+            console.warn(
+              `rewrite rate limited (HTTP 429, retry-after=${response.headers.get('retry-after') ?? 'none'})`,
+            );
+          }
           if (!RETRY_STATUS.has(response.status)) throw lastError;
           await sleep(retryDelay(attempt, response.headers.get('retry-after')));
           continue;
