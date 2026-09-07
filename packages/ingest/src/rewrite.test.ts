@@ -4,7 +4,12 @@ import {
   GEMINI_MODEL,
   buildRewriteRequest,
   budgetFor,
+  CONSERVATIVE_LIMIT,
   createRewriteClient,
+  DEFAULT_MODEL_LADDER,
+  ladderBudget,
+  resolveModelLadder,
+  RewriteQuotaError,
   paceIntervalMs,
   resolveRewriteConfig,
   rewriteArticle,
@@ -279,4 +284,143 @@ test('biến rỗng từ Actions không được ghi đè model và base URL', (
 
   expect(config.model).toBe(GEMINI_MODEL);
   expect(config.baseUrl).toBe(GEMINI_BASE_URL);
+});
+
+// Body 429 thật của Gemini: lý do nằm trong details[].violations[].quotaId,
+// phân biệt được vượt-phút với vượt-ngày.
+function quota429(quotaId: string, retryAfter?: string): Response {
+  return new Response(
+    JSON.stringify({
+      error: {
+        code: 429,
+        status: 'RESOURCE_EXHAUSTED',
+        message: 'You exceeded your current quota, please check your plan and billing details.',
+        details: [
+          {
+            '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+            violations: [
+              {
+                quotaMetric: 'generativelanguage.googleapis.com/generate_content_free_tier_requests',
+                quotaId,
+              },
+            ],
+          },
+        ],
+      },
+    }),
+    { status: 429, headers: retryAfter ? { 'retry-after': retryAfter } : {} },
+  );
+}
+
+const okResponse = () =>
+  Response.json({ choices: [{ finish_reason: 'stop', message: { content: '{}' } }] });
+
+/** Model của từng request đã bắn đi, theo đúng thứ tự. */
+function modelsSent(mock: { mock: { calls: unknown[][] } }): string[] {
+  return mock.mock.calls.map((call) => JSON.parse(String((call[1] as RequestInit).body)).model);
+}
+
+describe('thang model dự phòng', () => {
+  const req = buildRewriteRequest(input, 'bac-1');
+
+  test('thang mặc định xếp từ chất lượng cao xuống hạn mức cao', () => {
+    const rungs = resolveModelLadder({});
+
+    expect(rungs.map((rung) => rung.model)).toEqual(DEFAULT_MODEL_LADDER);
+    expect(rungs[0]).toMatchObject({ model: 'gemini-3.6-flash', rpm: 5, rpd: 20 });
+    expect(rungs.at(-1)).toMatchObject({ rpm: 15, rpd: 500 });
+  });
+
+  test('GEMINI_MODELS ghi đè thang, model lạ lấy hạn mức chặt nhất', () => {
+    const rungs = resolveModelLadder({ GEMINI_MODELS: 'gemini-3.5-flash-lite, model-la ' });
+
+    expect(rungs).toEqual([
+      { model: 'gemini-3.5-flash-lite', rpm: 15, rpd: 500 },
+      { model: 'model-la', ...CONSERVATIVE_LIMIT },
+    ]);
+  });
+
+  test('budget là tổng hạn mức ngày của cả thang', () => {
+    expect(ladderBudget(resolveModelLadder({}))).toBe(18 + 18 + 18 + 450 + 450);
+  });
+
+  test('hết quota ngày thì viết lại cùng bài bằng model bậc dưới', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(quota429('GenerateRequestsPerDayPerProjectPerModel-FreeTier'))
+      .mockResolvedValueOnce(okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createRewriteClient('k', 'https://p/v1', [
+      { model: 'bac-1', rpm: 600, rpd: 20 },
+      { model: 'bac-2', rpm: 600, rpd: 500 },
+    ]);
+    await client.complete(req);
+
+    expect(modelsSent(fetchMock)).toEqual(['bac-1', 'bac-2']);
+  });
+
+  test('vượt trần phút thì chờ rồi gọi lại chính model đó, không tụt bậc', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(quota429('GenerateRequestsPerMinutePerProjectPerModel-FreeTier', '0'))
+      .mockResolvedValueOnce(okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createRewriteClient('k', 'https://p/v1', [
+      { model: 'bac-1', rpm: 600, rpd: 20 },
+      { model: 'bac-2', rpm: 600, rpd: 500 },
+    ]);
+    await client.complete(req);
+
+    expect(modelsSent(fetchMock)).toEqual(['bac-1', 'bac-1']);
+  });
+
+  test('model không tồn tại cũng tụt bậc thay vì làm hỏng cả run', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('{"error":{"code":404,"message":"models/go-sai is not found","status":"NOT_FOUND"}}', {
+          status: 404,
+        }),
+      )
+      .mockResolvedValueOnce(okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createRewriteClient('k', 'https://p/v1', [
+      { model: 'go-sai', rpm: 600, rpd: 20 },
+      { model: 'bac-2', rpm: 600, rpd: 500 },
+    ]);
+    await client.complete(req);
+
+    expect(modelsSent(fetchMock)).toEqual(['go-sai', 'bac-2']);
+  });
+
+  test('chạm hạn mức ngày của một bậc thì tự tụt, không cần đợi 429', async () => {
+    const fetchMock = vi.fn(async () => okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createRewriteClient('k', 'https://p/v1', [
+      { model: 'bac-1', rpm: 600, rpd: 3 },
+      { model: 'bac-2', rpm: 600, rpd: 500 },
+    ]);
+    for (let i = 0; i < 4; i += 1) await client.complete(req);
+
+    expect(modelsSent(fetchMock)).toEqual(['bac-1', 'bac-1', 'bac-2', 'bac-2']);
+  });
+
+  test('hết cả thang mới báo hết quota', async () => {
+    const fetchMock = vi.fn(async () =>
+      quota429('GenerateRequestsPerDayPerProjectPerModel-FreeTier'),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createRewriteClient('k', 'https://p/v1', [
+      { model: 'bac-1', rpm: 600, rpd: 20 },
+      { model: 'bac-2', rpm: 600, rpd: 500 },
+    ]);
+
+    await expect(client.complete(req)).rejects.toBeInstanceOf(RewriteQuotaError);
+    expect(modelsSent(fetchMock)).toEqual(['bac-1', 'bac-2']);
+  });
 });

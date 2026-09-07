@@ -38,5 +38,7 @@ jobs:
           BAI_API_KEY: ${{ secrets.BAI_API_KEY }}
           # Dùng biến repo (không phải secret) để log không bị che tên model —
           # nhịp gọi và budget suy ra từ trần free tier của đúng model này.
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          # Thang model dự phòng, cách nhau bằng dấu phẩy. Bỏ trống thì dùng
+          # thang mặc định trong rewrite.ts (3.6 -> 3.5 -> 2.5 -> 2 bậc lite).
+          GEMINI_MODELS: ${{ vars.GEMINI_MODELS }}
           REWRITE_MAX_PER_RUN: ${{ vars.REWRITE_MAX_PER_RUN }}

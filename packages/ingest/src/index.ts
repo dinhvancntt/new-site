@@ -5,9 +5,9 @@ import { extractArticle } from './extract.js';
 import { fetchCategory } from './newsdata.js';
 import { runIngest, defaultConcurrency } from './pipeline.js';
 import {
-  budgetFor,
   createRewriteClient,
-  paceIntervalMs,
+  ladderBudget,
+  resolveModelLadder,
   resolveRewriteConfig,
   rewriteArticle,
 } from './rewrite.js';
@@ -28,16 +28,21 @@ export async function main(): Promise<number> {
   const gemini = rewriteConfig.provider === 'gemini';
   // Trần free tier tính theo request: giãn nhịp và chặn budget ngay từ đây,
   // vì vượt trần thì provider trả 429 và cả mẻ còn lại thành vô ích.
-  const paceMs = gemini ? paceIntervalMs(rewriteConfig.model) : 0;
+  // Quota free tính riêng từng model, nên xếp thang: hết hạn mức ngày của bậc
+  // trên thì client tự tụt xuống bậc dưới, cả run không chết vì một model.
+  const ladder = gemini ? resolveModelLadder(process.env) : [];
+  const pace = gemini ? ladder : 0;
   const maxRewrites = gemini
-    ? budgetFor(rewriteConfig.model, process.env['REWRITE_MAX_PER_RUN'])
+    ? ladderBudget(ladder, process.env['REWRITE_MAX_PER_RUN'])
     : undefined;
   console.log(
-    `rewrite provider: ${rewriteConfig.provider} (${rewriteConfig.model})` +
-      (gemini ? ` pace=${paceMs}ms budget=${maxRewrites}` : ''),
+    `rewrite provider: ${rewriteConfig.provider}` +
+      (gemini
+        ? ` thang=[${ladder.map((rung) => `${rung.model} ${rung.rpm}rpm/${rung.rpd}rpd`).join(' -> ')}] budget=${maxRewrites}`
+        : ` (${rewriteConfig.model})`),
   );
   const db = createDb(requireEnv('DATABASE_URL'));
-  const rewriteDeps = createRewriteClient(rewriteConfig.apiKey, rewriteConfig.baseUrl, paceMs);
+  const rewriteDeps = createRewriteClient(rewriteConfig.apiKey, rewriteConfig.baseUrl, pace);
 
   try {
     const { runId, counters, skipped } = await runIngest(

@@ -32,6 +32,13 @@ export type RewriteResult =
  * RPD = request/ngày). Model lạ thì lấy mức chặt nhất để không đốt quota vào
  * những lần thử vô ích.
  */
+// GitHub Actions truyền biến repo chưa đặt thành chuỗi rỗng, nên `??` không
+// đủ để rơi về mặc định. Rỗng hoặc chỉ khoảng trắng đều coi như chưa đặt.
+function optional(env: Record<string, string | undefined>, name: string): string | undefined {
+  const value = (env[name] ?? '').trim();
+  return value === '' ? undefined : value;
+}
+
 export const GEMINI_LIMITS: Record<string, { rpm: number; rpd: number }> = {
   'gemini-3.6-flash': { rpm: 5, rpd: 20 },
   'gemini-3.5-flash': { rpm: 5, rpd: 20 },
@@ -41,6 +48,45 @@ export const GEMINI_LIMITS: Record<string, { rpm: number; rpd: number }> = {
 };
 
 export const CONSERVATIVE_LIMIT = { rpm: 5, rpd: 20 };
+
+/**
+ * Quota free của Google tính riêng cho từng model, nên xếp thang: bài đầu đi
+ * model tốt nhất, hết hạn mức ngày thì tụt xuống bậc dưới hạn mức cao hơn.
+ * Tổng hạn mức của thang lớn hơn nhiều so với bám một model.
+ */
+export const DEFAULT_MODEL_LADDER = [
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-2.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
+];
+
+export interface LadderRung {
+  model: string;
+  rpm: number;
+  rpd: number;
+}
+
+export function ladderFor(models: string[]): LadderRung[] {
+  return models.map((model) => ({ model, ...limitsFor(model) }));
+}
+
+/** Thang lấy từ GEMINI_MODELS (cách nhau bằng dấu phẩy), rỗng thì dùng mặc định. */
+export function resolveModelLadder(env: Record<string, string | undefined>): LadderRung[] {
+  const listed = (optional(env, 'GEMINI_MODELS') ?? '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name !== '');
+  return ladderFor(listed.length > 0 ? listed : DEFAULT_MODEL_LADDER);
+}
+
+/** Trần số bài cho cả run: tổng hạn mức ngày của mọi bậc. */
+export function ladderBudget(rungs: LadderRung[], override?: string): number {
+  const asked = Number(override);
+  if (Number.isInteger(asked) && asked > 0) return asked;
+  return rungs.reduce((total, rung) => total + Math.floor(rung.rpd * 0.9), 0);
+}
 
 export function limitsFor(model: string): { rpm: number; rpd: number } {
   return GEMINI_LIMITS[model] ?? CONSERVATIVE_LIMIT;
@@ -128,13 +174,6 @@ export type RewriteConfig = {
  * Chọn provider viết lại qua biến môi trường, mặc định giữ BAI cũ:
  * REWRITE_PROVIDER=gemini + GEMINI_API_KEY (đổi model bằng GEMINI_MODEL).
  */
-// GitHub Actions truyền biến repo chưa đặt thành chuỗi rỗng, nên `??` không
-// đủ để rơi về mặc định. Rỗng hoặc chỉ khoảng trắng đều coi như chưa đặt.
-function optional(env: Record<string, string | undefined>, name: string): string | undefined {
-  const value = (env[name] ?? '').trim();
-  return value === '' ? undefined : value;
-}
-
 export function resolveRewriteConfig(env: Record<string, string | undefined> = process.env): RewriteConfig {
   // Chuẩn hoá vì giá trị paste từ UI dễ dính hoa/thường hoặc khoảng trắng.
   // Nếu không ghi rõ mà có key Gemini thì dùng Gemini luôn — đỡ phụ thuộc
@@ -170,74 +209,177 @@ function retryDelay(attempt: number, retryAfter: string | null): number {
   return Math.min(1000 * 2 ** attempt, 8000) + Math.random() * 250;
 }
 
+/** Lý do 429: vượt trần phút thì chờ được, vượt trần ngày thì phải đổi model. */
+export function quotaScope(body: string): 'day' | 'minute' {
+  let ids = '';
+  try {
+    const parsed = JSON.parse(body) as {
+      error?: { details?: { violations?: { quotaId?: string; quotaMetric?: string }[] }[] };
+    };
+    for (const detail of parsed.error?.details ?? []) {
+      for (const violation of detail.violations ?? []) {
+        ids += `${violation.quotaId ?? ''} ${violation.quotaMetric ?? ''} `;
+      }
+    }
+  } catch {
+    // Body không phải JSON thì soi thẳng chuỗi thô bên dưới.
+  }
+  const haystack = `${ids} ${body}`;
+  if (/per[_\s-]?minute/i.test(haystack)) return 'minute';
+  // Không nói rõ thì coi như hết ngày: tụt bậc còn dùng được, chứ gọi lại
+  // cùng model chỉ đốt thêm quota rồi vẫn 429.
+  return 'day';
+}
+
+/** Model bị gỡ hoặc gõ sai: bậc đó vô dụng, nhưng không được làm hỏng cả run. */
+function isModelUnavailable(status: number, body: string): boolean {
+  if (status === 404) return true;
+  return status === 400 && /not\s+found|not\s+supported|INVALID_ARGUMENT/i.test(body);
+}
+
+/** Bậc thang đã chết vì hết hạn mức ngày hoặc model không dùng được. */
+class RungDeadError extends Error {
+  constructor(readonly why: string) {
+    super(why);
+  }
+}
+
+interface RungState {
+  /** undefined = giữ model có trong request (đường BAI cũ). */
+  model: string | undefined;
+  intervalMs: number;
+  remaining: number;
+  nextSlot: number;
+  dead: boolean;
+}
+
+function toRungStates(pace: number | LadderRung[]): RungState[] {
+  if (typeof pace === 'number') {
+    return [{ model: undefined, intervalMs: pace, remaining: Infinity, nextSlot: 0, dead: false }];
+  }
+  return pace.map((rung) => ({
+    model: rung.model,
+    // Nhịp suy từ RPM của chính bậc đó, không tra lại bảng: người gọi có thể
+    // truyền hạn mức khác bảng (test, hoặc GEMINI_MODELS trỏ model mới).
+    intervalMs: Math.ceil((60_000 / rung.rpm) * SAFETY),
+    remaining: Math.floor(rung.rpd * 0.9),
+    nextSlot: 0,
+    dead: false,
+  }));
+}
+
 export function createRewriteClient(
   apiKey = process.env['BAI_API_KEY'],
   baseUrl = BAI_BASE_URL,
-  minIntervalMs = 0,
+  pace: number | LadderRung[] = 0,
 ): RewriteDeps {
-  // Nhịp gọi tối thiểu, giữ theo từng client: hai bài chạy song song vẫn phải
-  // nối đuôi nhau nên tổng request/phút không vượt trần RPM.
-  let nextSlot = 0;
-  const takeSlot = async (): Promise<void> => {
-    if (minIntervalMs <= 0) return;
+  // Nhịp gọi và hạn mức giữ theo từng bậc: RPM/RPD của Google tính riêng cho
+  // mỗi model, nên hai bài chạy song song vẫn phải nối đuôi trong cùng bậc.
+  const rungs = toRungStates(pace);
+  const usable = (): RungState | undefined =>
+    rungs.find((rung) => !rung.dead && rung.remaining > 0);
+
+  const takeSlot = async (rung: RungState): Promise<void> => {
+    if (rung.intervalMs <= 0) return;
     const now = Date.now();
-    const startAt = Math.max(now, nextSlot);
-    nextSlot = startAt + minIntervalMs;
+    const startAt = Math.max(now, rung.nextSlot);
+    rung.nextSlot = startAt + rung.intervalMs;
     if (startAt > now) await sleep(startAt - now);
   };
 
-  return {
-    complete: async (request) => {
-      let lastError: Error = new Error('không gọi được provider');
+  const killRung = (rung: RungState, why: string): void => {
+    rung.dead = true;
+    const next = usable();
+    console.warn(
+      `rewrite: bậc ${rung.model ?? 'mặc định'} dừng (${why.slice(0, 200)})` +
+        (next ? `, tụt xuống ${next.model}` : ', hết thang'),
+    );
+  };
 
-      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-        if (attempt > 0) await sleep(retryDelay(attempt - 1, null));
-        await takeSlot();
+  /** Gọi một bậc tới cùng: chỉ trả về khi xong, hoặc ném lỗi cho bậc/bài. */
+  const completeOn = async (
+    rung: RungState,
+    request: ReturnType<typeof buildRewriteRequest>,
+  ): Promise<RewriteCompletion> => {
+    const body = JSON.stringify(rung.model ? { ...request, model: rung.model } : request);
+    let lastError: Error = new Error('không gọi được provider');
 
-        let response: Response;
-        try {
-          response = await fetch(`${baseUrl}/chat/completions`, {
-            method: 'POST',
-            headers: {
-              authorization: `Bearer ${apiKey}`,
-              'content-type': 'application/json',
-            },
-            body: JSON.stringify(request),
-            signal: AbortSignal.timeout(180_000),
-          });
-        } catch (cause) {
-          lastError = new Error('lỗi mạng khi gọi provider', { cause });
-          continue;
-        }
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+      if (attempt > 0) await sleep(retryDelay(attempt - 1, null));
+      await takeSlot(rung);
+      if (rung.remaining <= 0) throw new RungDeadError('hết hạn mức ngày theo bảng');
+      rung.remaining -= 1;
 
-        if (!response.ok) {
-          const detail = (await response.text().catch(() => '')).slice(0, 300);
-          lastError = new Error(`provider trả HTTP ${response.status}: ${detail}`);
-          if (response.status === 429) {
-            if (!rateLimitWarned) {
-              rateLimitWarned = true;
-              console.warn(
-                `rewrite hết quota (HTTP 429, retry-after=${response.headers.get('retry-after') ?? 'none'}): ${detail}`,
-              );
-            }
-            throw new RewriteQuotaError(detail);
+      let response: Response;
+      try {
+        response = await fetch(`${baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${apiKey}`,
+            'content-type': 'application/json',
+          },
+          body,
+          signal: AbortSignal.timeout(180_000),
+        });
+      } catch (cause) {
+        lastError = new Error('lỗi mạng khi gọi provider', { cause });
+        continue;
+      }
+
+      if (!response.ok) {
+        const detail = (await response.text().catch(() => '')).slice(0, 2000);
+        lastError = new Error(`provider trả HTTP ${response.status}: ${detail.slice(0, 300)}`);
+
+        if (response.status === 429) {
+          if (quotaScope(detail) === 'day') {
+            rung.remaining = 0;
+            throw new RungDeadError(`429 hết hạn mức ngày: ${detail.slice(0, 200)}`);
           }
-          if (!RETRY_STATUS.has(response.status)) throw lastError;
+          // Vượt trần phút: chờ rồi gọi lại chính bậc này.
+          if (!rateLimitWarned) {
+            rateLimitWarned = true;
+            console.warn(
+              `rewrite chạm trần phút của ${rung.model ?? 'model mặc định'} ` +
+                `(retry-after=${response.headers.get('retry-after') ?? 'none'})`,
+            );
+          }
           await sleep(retryDelay(attempt, response.headers.get('retry-after')));
           continue;
         }
 
-        const payload = (await response.json()) as {
-          choices?: { finish_reason?: string | null; message?: { content?: string | null } }[];
-        };
-        const choice = payload.choices?.[0];
-        return {
-          finish_reason: choice?.finish_reason ?? null,
-          text: choice?.message?.content ?? '',
-        };
+        if (isModelUnavailable(response.status, detail)) {
+          throw new RungDeadError(`HTTP ${response.status}: ${detail.slice(0, 200)}`);
+        }
+        if (!RETRY_STATUS.has(response.status)) throw lastError;
+        await sleep(retryDelay(attempt, response.headers.get('retry-after')));
+        continue;
       }
 
-      throw lastError;
+      const payload = (await response.json()) as {
+        choices?: { finish_reason?: string | null; message?: { content?: string | null } }[];
+      };
+      const choice = payload.choices?.[0];
+      return {
+        finish_reason: choice?.finish_reason ?? null,
+        text: choice?.message?.content ?? '',
+      };
+    }
+
+    throw lastError;
+  };
+
+  return {
+    complete: async (request) => {
+      for (;;) {
+        const rung = usable();
+        if (!rung) throw new RewriteQuotaError('hết hạn mức ngày ở mọi model trong thang');
+        try {
+          return await completeOn(rung, request);
+        } catch (error) {
+          if (!(error instanceof RungDeadError)) throw error;
+          killRung(rung, error.why);
+        }
+      }
     },
   };
 }
