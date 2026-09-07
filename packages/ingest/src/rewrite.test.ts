@@ -1,5 +1,12 @@
 import { test, expect } from 'vitest';
-import { buildRewriteRequest, rewriteArticle, type RewriteInput } from './rewrite.js';
+import {
+  GEMINI_BASE_URL,
+  GEMINI_MODEL,
+  buildRewriteRequest,
+  resolveRewriteConfig,
+  rewriteArticle,
+  type RewriteInput,
+} from './rewrite.js';
 
 const input: RewriteInput = {
   title: 'Central bank holds rates steady',
@@ -33,6 +40,36 @@ test('request pins the b.ai model, token ceiling and JSON mode', () => {
   expect(request.model).toBe('deepseek-v4-flash');
   expect(request.max_tokens).toBe(8000);
   expect(request.response_format).toEqual({ type: 'json_object' });
+});
+
+test('request carries a custom model when the caller overrides it', () => {
+  expect(buildRewriteRequest(input, 'gemini-2.5-flash').model).toBe('gemini-2.5-flash');
+});
+
+test('provider defaults to b.ai when REWRITE_PROVIDER is unset', () => {
+  expect(resolveRewriteConfig({})).toMatchObject({ provider: 'bai' });
+});
+
+test('provider switches to Gemini with model and base URL defaults', () => {
+  const config = resolveRewriteConfig({ REWRITE_PROVIDER: 'gemini', GEMINI_API_KEY: 'test-key' });
+
+  expect(config).toMatchObject({
+    provider: 'gemini',
+    apiKey: 'test-key',
+    baseUrl: GEMINI_BASE_URL,
+    model: GEMINI_MODEL,
+  });
+});
+
+test('provider honours GEMINI_MODEL and GEMINI_BASE_URL overrides', () => {
+  const config = resolveRewriteConfig({
+    REWRITE_PROVIDER: 'gemini',
+    GEMINI_MODEL: 'gemini-3-flash',
+    GEMINI_BASE_URL: 'https://example.com/openai',
+  });
+
+  expect(config.model).toBe('gemini-3-flash');
+  expect(config.baseUrl).toBe('https://example.com/openai');
 });
 
 test('system message carries the anti-fabrication rules without the article', () => {

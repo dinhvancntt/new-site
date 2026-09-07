@@ -4,7 +4,7 @@ import { exitCodeFor } from './exit-code.js';
 import { extractArticle } from './extract.js';
 import { fetchCategory } from './newsdata.js';
 import { runIngest } from './pipeline.js';
-import { createRewriteClient, rewriteArticle } from './rewrite.js';
+import { createRewriteClient, resolveRewriteConfig, rewriteArticle } from './rewrite.js';
 
 export const CATEGORIES = ['world', 'business', 'technology', 'sports', 'health'] as const;
 
@@ -17,9 +17,10 @@ function requireEnv(name: string): string {
 /** Điểm vào của worker chạy trên GitHub Actions mỗi 3 giờ. */
 export async function main(): Promise<number> {
   const newsdataKey = requireEnv('NEWSDATA_API_KEY');
-  requireEnv('BAI_API_KEY');
+  const rewriteConfig = resolveRewriteConfig();
+  requireEnv(rewriteConfig.provider === 'gemini' ? 'GEMINI_API_KEY' : 'BAI_API_KEY');
   const db = createDb(requireEnv('DATABASE_URL'));
-  const rewriteDeps = createRewriteClient();
+  const rewriteDeps = createRewriteClient(rewriteConfig.apiKey, rewriteConfig.baseUrl);
 
   try {
     const { runId, counters } = await runIngest(
@@ -27,7 +28,7 @@ export async function main(): Promise<number> {
         db,
         fetchCategory: (category) => fetchCategory({ apiKey: newsdataKey, category }),
         extract: (url) => extractArticle(url),
-        rewrite: (input) => rewriteArticle(input, rewriteDeps),
+        rewrite: (input) => rewriteArticle(input, rewriteDeps, rewriteConfig.model),
       },
       { categories: [...CATEGORIES] },
     );

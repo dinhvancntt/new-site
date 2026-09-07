@@ -1,6 +1,8 @@
 export const REWRITE_MODEL = 'deepseek-v4-flash';
 export const MAX_TOKENS = 8000;
 export const BAI_BASE_URL = 'https://api.b.ai/v1';
+export const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
+export const GEMINI_MODEL = 'gemini-3.6-flash';
 export const MAX_ATTEMPTS = 4;
 
 export interface RewriteInput {
@@ -45,9 +47,9 @@ Chỉ trả về một JSON object duy nhất, không kèm markdown hay lời gi
 - "tags": array gồm 3-6 string viết thường.
 - "insufficient": boolean, true khi bài gốc không đủ dữ kiện.`;
 
-export function buildRewriteRequest(input: RewriteInput) {
+export function buildRewriteRequest(input: RewriteInput, model: string = REWRITE_MODEL) {
   return {
-    model: REWRITE_MODEL,
+    model,
     max_tokens: MAX_TOKENS,
     // Provider không nhận JSON Schema, chỉ có JSON mode — nên schema nằm ở
     // system prompt và mọi field đều được kiểm lại ở validateArticle().
@@ -69,6 +71,31 @@ export interface RewriteCompletion {
 
 export interface RewriteDeps {
   complete: (request: ReturnType<typeof buildRewriteRequest>) => Promise<RewriteCompletion>;
+}
+
+export type RewriteProvider = 'bai' | 'gemini';
+
+export type RewriteConfig = {
+  provider: RewriteProvider;
+  apiKey: string | undefined;
+  baseUrl: string;
+  model: string;
+};
+
+/**
+ * Chọn provider viết lại qua biến môi trường, mặc định giữ BAI cũ:
+ * REWRITE_PROVIDER=gemini + GEMINI_API_KEY (đổi model bằng GEMINI_MODEL).
+ */
+export function resolveRewriteConfig(env: Record<string, string | undefined> = process.env): RewriteConfig {
+  if (env['REWRITE_PROVIDER'] === 'gemini') {
+    return {
+      provider: 'gemini',
+      apiKey: env['GEMINI_API_KEY'],
+      baseUrl: env['GEMINI_BASE_URL'] ?? GEMINI_BASE_URL,
+      model: env['GEMINI_MODEL'] ?? GEMINI_MODEL,
+    };
+  }
+  return { provider: 'bai', apiKey: env['BAI_API_KEY'], baseUrl: BAI_BASE_URL, model: REWRITE_MODEL };
 }
 
 const RETRY_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
@@ -182,10 +209,11 @@ function validateArticle(value: Record<string, unknown>): Omit<RewrittenArticle,
 export async function rewriteArticle(
   input: RewriteInput,
   deps: RewriteDeps,
+  model: string = REWRITE_MODEL,
 ): Promise<RewriteResult> {
   let completion: RewriteCompletion;
   try {
-    completion = await deps.complete(buildRewriteRequest(input));
+    completion = await deps.complete(buildRewriteRequest(input, model));
   } catch (error) {
     // Chỉ log lỗi provider đầu tiên mỗi run để Actions đọc được HTTP status,
     // các bài sau fail cùng nguyên nhân thì counters đã đủ.
