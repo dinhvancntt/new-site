@@ -134,7 +134,15 @@ export function createRewriteClient(
 
 const FENCE = /^```(?:json)?\s*([\s\S]*?)\s*```$/;
 
-/** Model đôi khi bọc JSON trong fence dù đã bật JSON mode. */
+/** Giữ 1 dòng lỗi provider đầu tiên mỗi process để log Actions đọc được. */
+let providerErrorLogged = false;
+
+function logProviderErrorOnce(error: unknown): void {
+  if (providerErrorLogged) return;
+  providerErrorLogged = true;
+  const text = error instanceof Error ? error.message : String(error);
+  console.error(`rewrite provider error: ${text.slice(0, 300)}`);
+}/** Model đôi khi bọc JSON trong fence dù đã bật JSON mode. */
 function stripFence(text: string): string {
   const trimmed = text.trim();
   return FENCE.exec(trimmed)?.[1]?.trim() ?? trimmed;
@@ -178,7 +186,10 @@ export async function rewriteArticle(
   let completion: RewriteCompletion;
   try {
     completion = await deps.complete(buildRewriteRequest(input));
-  } catch {
+  } catch (error) {
+    // Chỉ log lỗi provider đầu tiên mỗi run để Actions đọc được HTTP status,
+    // các bài sau fail cùng nguyên nhân thì counters đã đủ.
+    logProviderErrorOnce(error);
     return { ok: false, reason: 'error' };
   }
 
