@@ -55,6 +55,31 @@ export async function fetchCategory({
     .filter((article): article is FetchedArticle => article !== null);
 }
 
+// Wire feed hay nhét pixel theo dõi vào `image_url` (ví dụ rt.prnewswire.com/rt.gif).
+// Chúng trả về 200 image/gif nên không thể phát hiện bằng cách gọi thử; phải lọc theo hình dạng URL.
+const BEACON_HINTS = ['beacon', 'pixel', 'track', '1x1', 'spacer', 'blank', 'rt.gif'];
+
+export function sanitizeImageUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || value === '') return null;
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null; // URL tương đối hoặc rác thì bỏ, vì sau này còn đưa qua dịch vụ resize.
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+
+  // Ảnh tin tức thật gần như luôn là jpg/png/webp; gif trong feed hầu hết là beacon.
+  if (url.pathname.toLowerCase().endsWith('.gif')) return null;
+
+  const haystack = `${url.hostname}${url.pathname}`.toLowerCase();
+  if (BEACON_HINTS.some((hint) => haystack.includes(hint))) return null;
+
+  return value;
+}
+
 function toArticle(raw: RawArticle, category: string): FetchedArticle | null {
   const sourceId = raw.article_id;
   const title = raw.title;
@@ -73,7 +98,7 @@ function toArticle(raw: RawArticle, category: string): FetchedArticle | null {
     title: title.trim(),
     description: typeof raw.description === 'string' ? raw.description : null,
     link,
-    imageUrl: typeof raw.image_url === 'string' ? raw.image_url : null,
+    imageUrl: sanitizeImageUrl(raw.image_url),
     sourceName: typeof raw.source_name === 'string' ? raw.source_name : 'Unknown',
     category,
     publishedAt,
