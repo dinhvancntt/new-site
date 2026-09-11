@@ -42,3 +42,7 @@ jobs:
           # thang mặc định trong rewrite.ts (3.6 -> 3.5 -> 2.5 -> 2 bậc lite).
           GEMINI_MODELS: ${{ vars.GEMINI_MODELS }}
           REWRITE_MAX_PER_RUN: ${{ vars.REWRITE_MAX_PER_RUN }}
+          # Ping IndexNow sau khi ghi xong. Khoá là public theo thiết kế (site
+          # phải phục vụ nó ở /indexnow-key.txt) nên để dạng biến, không secret.
+          NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL }}
+          INDEXNOW_KEY: ${{ vars.INDEXNOW_KEY }}

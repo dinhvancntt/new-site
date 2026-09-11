@@ -2,6 +2,7 @@ import { pathToFileURL } from 'node:url';
 import { createDb } from '@news/db';
 import { exitCodeFor } from './exit-code.js';
 import { extractArticle } from './extract.js';
+import { submitIndexNow } from './indexnow.js';
 import { fetchCategory } from './newsdata.js';
 import { runIngest, defaultConcurrency } from './pipeline.js';
 import {
@@ -45,7 +46,7 @@ export async function main(): Promise<number> {
   const rewriteDeps = createRewriteClient(rewriteConfig.apiKey, rewriteConfig.baseUrl, pace);
 
   try {
-    const { runId, counters, skipped } = await runIngest(
+    const { runId, counters, skipped, writtenPaths } = await runIngest(
       {
         db,
         fetchCategory: (category) => fetchCategory({ apiKey: newsdataKey, category }),
@@ -60,6 +61,20 @@ export async function main(): Promise<number> {
     );
 
     console.log(`run ${runId}`, JSON.stringify({ ...counters, skipped }));
+
+    // Sau khi đã ghi xong: báo URL mới cho Bing/Yandex. Không tính vào exit
+    // code — bài đã nằm trong DB rồi, việc này hỏng chỉ là chậm được index.
+    const siteUrl = process.env['NEXT_PUBLIC_SITE_URL'];
+    const indexNowKey = process.env['INDEXNOW_KEY'];
+    if (siteUrl && indexNowKey && writtenPaths.length > 0) {
+      const host = new URL(siteUrl).host;
+      const result = await submitIndexNow(
+        writtenPaths.map((path) => new URL(path, siteUrl).toString()),
+        { host, key: indexNowKey, keyLocation: new URL('/indexnow-key.txt', siteUrl).toString() },
+      );
+      console.log('indexnow', JSON.stringify(result));
+    }
+
     return exitCodeFor(counters);
   } finally {
     await db.$client.end();

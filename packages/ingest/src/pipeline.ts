@@ -1,5 +1,5 @@
 import { inArray } from 'drizzle-orm';
-import { articles, type Db } from '@news/db';
+import { articles, articleContents, type Db } from '@news/db';
 import { selectNewArticles, titleHash, type ExistingKeys } from './dedupe.js';
 import type { ExtractedArticle } from './extract.js';
 import type { FetchedArticle } from './newsdata.js';
@@ -39,6 +39,11 @@ export type IngestResult = {
   runId: string;
   counters: RunCounters;
   skipped: { budget: number; quota: number };
+  /**
+   * Đường dẫn tương đối (`/vi/<slug>`) của đúng những bài run này vừa ghi —
+   * nguồn cho bước báo IndexNow. Bài trùng không có mặt ở đây vì nó không mới.
+   */
+  writtenPaths: string[];
 };
 
 const DEFAULT_CONCURRENCY = 3;
@@ -117,6 +122,7 @@ export async function runIngest(
     failed: 0,
   };
 
+  const storedIds: string[] = [];
   const candidates: FetchedArticle[] = [];
   // Gom lỗi theo giai đoạn để log một dòng diagnostics cuối run — trước đây
   // catch nuốt lỗi nên Actions chỉ thấy counters mà không biết vì sao fail.
@@ -205,8 +211,10 @@ export async function runIngest(
         },
       });
 
-      if (stored) counters.written += 1;
-      else counters.skippedDup += 1;
+      if (stored) {
+        counters.written += 1;
+        storedIds.push(stored);
+      } else counters.skippedDup += 1;
     } catch (error) {
       // Một bài hỏng không được kéo cả mẻ xuống — xem spec Bước 6.
       counters.failed += 1;
@@ -221,6 +229,18 @@ export async function runIngest(
     );
   }
 
+  // Slug do Postgres phân xử lúc ghi (có thể mang hậu tố chống trùng), nên
+  // phải đọc lại từ DB thay vì suy ra từ tiêu đề.
+  const writtenPaths =
+    storedIds.length === 0
+      ? []
+      : (
+          await deps.db
+            .select({ lang: articleContents.lang, slug: articleContents.slug })
+            .from(articleContents)
+            .where(inArray(articleContents.articleId, storedIds))
+        ).map((row) => `/${row.lang}/${row.slug}`);
+
   await finishRun(deps.db, runId, counters);
-  return { runId, counters, skipped };
+  return { runId, counters, skipped, writtenPaths };
 }

@@ -218,3 +218,27 @@ test('gặp 429 thì dừng gọi provider và không tính bài nào là lỗi'
   expect(result.counters.written).toBe(0);
   expect(result.skipped.quota).toBe(3);
 });
+
+test('run trả về đường dẫn của đúng những bài vừa ghi, cả hai ngôn ngữ', async () => {
+  const article = fetched();
+
+  const result = await run(deps({ fetchCategory: async () => [article] }));
+
+  const [row] = await db.select().from(articles).where(eq(articles.sourceId, article.sourceId));
+  const contents = await db.select().from(articleContents).where(eq(articleContents.articleId, row!.id));
+  const expected = contents.map((c) => `/${c.lang}/${c.slug}`);
+
+  expect(result.writtenPaths).toHaveLength(2);
+  expect([...result.writtenPaths].sort()).toEqual([...expected].sort());
+});
+
+// Bài trùng không được gửi lại cho search engine — nó không có gì mới.
+test('bài bị bỏ vì trùng không sinh đường dẫn nào', async () => {
+  const article = fetched();
+  await run(deps({ fetchCategory: async () => [article] }));
+
+  const result = await run(deps({ fetchCategory: async () => [article] }));
+
+  expect(result.counters.skippedDup).toBe(1);
+  expect(result.writtenPaths).toEqual([]);
+});
