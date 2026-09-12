@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { otherLang, type Lang } from '@/lib/lang';
-import { CATEGORIES, CATEGORY_LABEL, SITE_NAME, STRINGS } from '@/lib/site';
+import { NAV_CATEGORIES, CATEGORY_LABEL, SITE_NAME, STRINGS } from '@/lib/site';
 
 export function Footer({ lang }: { lang: Lang }) {
   const t = STRINGS[lang];
@@ -15,7 +15,7 @@ export function Footer({ lang }: { lang: Lang }) {
           </div>
 
           <ul className="slugline flex flex-wrap gap-x-5 gap-y-2">
-            {CATEGORIES.map((category) => (
+            {NAV_CATEGORIES.map((category) => (
               <li key={category}>
                 <Link href={`/${lang}/c/${category}`} className="link-rule">
                   {CATEGORY_LABEL[lang][category]}

@@ -18,8 +18,22 @@ export function hreflangAlternates(viPath: string, enPath: string): Record<strin
   return { 'x-default': viPath, vi: viPath, en: enPath };
 }
 
-/** Cùng danh sách chuyên mục mà worker thu thập (packages/ingest CATEGORIES). */
-export const CATEGORIES = ['world', 'business', 'technology', 'sports', 'health'] as const;
+/** Ngách đang thu thập (khớp packages/ingest FEEDS) — chỉ những mục này lên nav. */
+export const NAV_CATEGORIES = ['motorsport', 'cycling', 'equestrian'] as const;
+
+/**
+ * Toàn bộ chuyên mục còn định tuyến được, gồm cả 5 mục rộng đã ngừng thu thập.
+ * Bài cũ vẫn nằm trong DB và một số đang có thứ hạng, nên route và sitemap
+ * phải giữ lại; chỉ nav là thu gọn về ngách mới.
+ */
+export const CATEGORIES = [
+  ...NAV_CATEGORIES,
+  'world',
+  'business',
+  'technology',
+  'sports',
+  'health',
+] as const;
 
 export type Category = (typeof CATEGORIES)[number];
 
@@ -40,6 +54,9 @@ export function siteUrl(): string {
 
 export const CATEGORY_LABEL: Record<Lang, Record<Category, string>> = {
   vi: {
+    motorsport: 'Đua xe',
+    cycling: 'Xe đạp',
+    equestrian: 'Thể thao ngựa',
     world: 'Thế giới',
     business: 'Kinh doanh',
     technology: 'Công nghệ',
@@ -47,6 +64,9 @@ export const CATEGORY_LABEL: Record<Lang, Record<Category, string>> = {
     health: 'Sức khoẻ',
   },
   en: {
+    motorsport: 'Motorsport',
+    cycling: 'Cycling',
+    equestrian: 'Equestrian',
     world: 'World',
     business: 'Business',
     technology: 'Technology',
@@ -62,6 +82,12 @@ export function categoryLabel(lang: Lang, category: string): string {
 /** Mô tả tĩnh mỗi chuyên mục: chống thin content, cho Google hiểu trang mục viết về gì. */
 export const CATEGORY_DESCRIPTION: Record<Lang, Record<Category, string>> = {
   vi: {
+    motorsport:
+      'Tin đua xe mới nhất: F1, IndyCar, NASCAR, WEC và các giải đua cơ sở — kết quả chặng, lịch thi đấu và chuyển nhượng tay đua.',
+    cycling:
+      'Tin đua xe đạp mới nhất: Tour de France, Giro, Vuelta và lịch WorldTour — kết quả từng chặng cùng tin đội đua.',
+    equestrian:
+      'Tin thể thao ngựa mới nhất: nhảy chướng ngại vật, eventing và dressage — tường thuật giải đấu và chăm sóc ngựa thi đấu.',
     world: 'Tin thế giới mới nhất: chính trị, xung đột, ngoại giao và các sự kiện toàn cầu, tổng hợp từ hãng tin quốc tế và tóm lược trong 1 phút.',
     business: 'Tin kinh doanh mới nhất: thị trường, tài chính, doanh nghiệp và chính sách kinh tế toàn cầu, tóm lược nhanh mỗi ngày.',
     technology: 'Tin công nghệ mới nhất: AI, chip, thiết bị, startup và chuyển đổi số trên toàn thế giới, cập nhật liên tục.',
@@ -69,6 +95,12 @@ export const CATEGORY_DESCRIPTION: Record<Lang, Record<Category, string>> = {
     health: 'Tin sức khỏe mới nhất: y tế, dịch bệnh, dinh dưỡng và nghiên cứu khoa học đáng chú ý trên thế giới.',
   },
   en: {
+    motorsport:
+      'Latest motorsport news: F1, IndyCar, NASCAR, WEC and grassroots racing — race results, schedules and driver moves.',
+    cycling:
+      'Latest cycling news: Tour de France, Giro, Vuelta and the WorldTour calendar — stage results and team news.',
+    equestrian:
+      'Latest equestrian news: showjumping, eventing and dressage — competition reports and care of the competition horse.',
     world: 'Latest world news: politics, conflicts, diplomacy and global events from international wires, summarised in one minute.',
     business: 'Latest business news: markets, finance, companies and economic policy worldwide, briefly summarised daily.',
     technology: 'Latest technology news: AI, chips, gadgets, startups and digital transformation across the globe.',

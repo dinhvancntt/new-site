@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { fetchCategory } from './newsdata.js';
+import { fetchFeed } from './newsdata.js';
 
 const rawArticle = {
   article_id: 'abc123',
@@ -15,9 +15,10 @@ const fakeFetch = (body: unknown, status = 200) =>
   async () => new Response(JSON.stringify(body), { status });
 
 test('chuyển bài từ NewsData sang cấu trúc nội bộ', async () => {
-  const articles = await fetchCategory({
+  const articles = await fetchFeed({
     apiKey: 'test-key',
     category: 'world',
+    domains: ['example.com'],
     fetchImpl: fakeFetch({ status: 'success', results: [rawArticle] }),
   });
 
@@ -36,9 +37,10 @@ test('chuyển bài từ NewsData sang cấu trúc nội bộ', async () => {
 });
 
 test('bỏ bài thiếu tiêu đề, link hoặc ngày đăng hợp lệ', async () => {
-  const articles = await fetchCategory({
+  const articles = await fetchFeed({
     apiKey: 'test-key',
     category: 'world',
+    domains: ['example.com'],
     fetchImpl: fakeFetch({
       status: 'success',
       results: [
@@ -54,9 +56,10 @@ test('bỏ bài thiếu tiêu đề, link hoặc ngày đăng hợp lệ', async
 });
 
 test('ném lỗi kèm mã trạng thái khi NewsData trả lỗi', async () => {
-  const call = fetchCategory({
+  const call = fetchFeed({
     apiKey: 'test-key',
     category: 'world',
+    domains: ['example.com'],
     fetchImpl: fakeFetch({ status: 'error', message: 'Rate limit exceeded' }, 429),
   });
 
@@ -64,9 +67,10 @@ test('ném lỗi kèm mã trạng thái khi NewsData trả lỗi', async () => {
 });
 
 const withImage = async (image_url: unknown) => {
-  const [article] = await fetchCategory({
+  const [article] = await fetchFeed({
     apiKey: 'test-key',
     category: 'world',
+    domains: ['example.com'],
     fetchImpl: fakeFetch({ status: 'success', results: [{ ...rawArticle, image_url }] }),
   });
   return article?.imageUrl ?? null;
@@ -101,4 +105,52 @@ test('giữ nguyên ảnh thật', async () => {
   expect(await withImage('https://images.example.com/a.webp?w=1200')).toBe(
     'https://images.example.com/a.webp?w=1200',
   );
+});
+
+test('lọc theo domainurl thay vì chuyên mục của NewsData', async () => {
+  let seen: URL | undefined;
+  await fetchFeed({
+    apiKey: 'test-key',
+    category: 'motorsport',
+    domains: ['racer.com', 'autosport.com'],
+    fetchImpl: async (input) => {
+      seen = input as URL;
+      return new Response(JSON.stringify({ status: 'success', results: [rawArticle] }), {
+        status: 200,
+      });
+    },
+  });
+
+  expect(seen?.searchParams.get('domainurl')).toBe('racer.com,autosport.com');
+  expect(seen?.searchParams.get('category')).toBeNull();
+  expect(seen?.searchParams.get('language')).toBe('en');
+});
+
+test('gán chuyên mục nội bộ cho bài lấy về, không lấy từ NewsData', async () => {
+  const [article] = await fetchFeed({
+    apiKey: 'test-key',
+    category: 'motorsport',
+    domains: ['racer.com'],
+    fetchImpl: fakeFetch({ status: 'success', results: [rawArticle] }),
+  });
+
+  expect(article?.category).toBe('motorsport');
+});
+
+// NewsData chặn quá 5 domain bằng HTTP 422; hỏng cấu hình thì phải lộ ở test
+// chứ không phải đốt một credit rồi mới biết.
+test('chặn ngay khi vượt trần 5 domain, không gọi API', async () => {
+  let called = false;
+  const call = fetchFeed({
+    apiKey: 'test-key',
+    category: 'motorsport',
+    domains: ['a.com', 'b.com', 'c.com', 'd.com', 'e.com', 'f.com'],
+    fetchImpl: async () => {
+      called = true;
+      return new Response('{}', { status: 200 });
+    },
+  });
+
+  await expect(call).rejects.toThrow(/5/);
+  expect(called).toBe(false);
 });

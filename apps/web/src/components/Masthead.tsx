@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { SearchBox } from './SearchBox';
 import { otherLang, type Lang } from '@/lib/lang';
-import { CATEGORIES, CATEGORY_LABEL, SITE_NAME, STRINGS } from '@/lib/site';
+import { NAV_CATEGORIES, CATEGORY_LABEL, SITE_NAME, STRINGS } from '@/lib/site';
 
 export function Masthead({
   lang,
@@ -52,7 +52,7 @@ export function Masthead({
 
         <nav className="flex items-center justify-between gap-6 border-b border-rule py-2.5">
           <ul className="slugline -mb-px flex gap-5 overflow-x-auto whitespace-nowrap">
-            {CATEGORIES.map((category) => {
+            {NAV_CATEGORIES.map((category) => {
               const active = category === activeCategory;
               return (
                 <li key={category}>

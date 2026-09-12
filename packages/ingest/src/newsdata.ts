@@ -1,3 +1,5 @@
+import { MAX_DOMAINS_PER_QUERY } from './feeds.js';
+
 export type FetchedArticle = {
   sourceId: string;
   title: string;
@@ -19,9 +21,11 @@ type RawArticle = {
   pubDate?: unknown;
 };
 
-export type FetchCategoryOptions = {
+export type FetchFeedOptions = {
   apiKey: string;
+  /** Chuyên mục nội bộ của site, không phải category của NewsData. */
   category: string;
+  domains: readonly string[];
   fetchImpl?: typeof fetch;
 };
 
@@ -30,14 +34,21 @@ function parsePubDate(value: string): Date {
   return new Date(`${value.replace(' ', 'T')}Z`);
 }
 
-export async function fetchCategory({
+export async function fetchFeed({
   apiKey,
   category,
+  domains,
   fetchImpl = fetch,
-}: FetchCategoryOptions): Promise<FetchedArticle[]> {
+}: FetchFeedOptions): Promise<FetchedArticle[]> {
+  if (domains.length === 0 || domains.length > MAX_DOMAINS_PER_QUERY) {
+    throw new Error(
+      `Chuyên mục "${category}" có ${domains.length} domain, NewsData chỉ nhận 1-${MAX_DOMAINS_PER_QUERY} mỗi query`,
+    );
+  }
+
   const url = new URL('https://newsdata.io/api/1/latest');
   url.searchParams.set('apikey', apiKey);
-  url.searchParams.set('category', category);
+  url.searchParams.set('domainurl', domains.join(','));
   url.searchParams.set('language', 'en');
 
   const response = await fetchImpl(url);
@@ -48,9 +59,12 @@ export async function fetchCategory({
     );
   }
 
-  const body = (await response.json()) as { results?: RawArticle[] };
+  const body = (await response.json()) as { results?: unknown };
 
-  return (body.results ?? [])
+  // Lỗi mềm (ví dụ sai tham số) trả 200 kèm `results` là object, không phải mảng.
+  const results = Array.isArray(body.results) ? (body.results as RawArticle[]) : [];
+
+  return results
     .map((raw) => toArticle(raw, category))
     .filter((article): article is FetchedArticle => article !== null);
 }

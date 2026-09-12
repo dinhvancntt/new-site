@@ -3,7 +3,8 @@ import { createDb } from '@news/db';
 import { exitCodeFor } from './exit-code.js';
 import { extractArticle } from './extract.js';
 import { submitIndexNow } from './indexnow.js';
-import { fetchCategory } from './newsdata.js';
+import { feedCategories, feedDomains } from './feeds.js';
+import { fetchFeed } from './newsdata.js';
 import { runIngest, defaultConcurrency } from './pipeline.js';
 import {
   createRewriteClient,
@@ -12,8 +13,6 @@ import {
   resolveRewriteConfig,
   rewriteArticle,
 } from './rewrite.js';
-
-export const CATEGORIES = ['world', 'business', 'technology', 'sports', 'health'] as const;
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -49,12 +48,13 @@ export async function main(): Promise<number> {
     const { runId, counters, skipped, writtenPaths } = await runIngest(
       {
         db,
-        fetchCategory: (category) => fetchCategory({ apiKey: newsdataKey, category }),
+        fetchCategory: (category) =>
+          fetchFeed({ apiKey: newsdataKey, category, domains: feedDomains(category) }),
         extract: (url) => extractArticle(url),
         rewrite: (input) => rewriteArticle(input, rewriteDeps, rewriteConfig.model),
       },
       {
-        categories: [...CATEGORIES],
+        categories: feedCategories(),
         concurrency: defaultConcurrency(rewriteConfig.provider),
         maxRewrites,
       },
