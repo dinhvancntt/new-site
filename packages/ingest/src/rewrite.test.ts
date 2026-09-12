@@ -64,7 +64,7 @@ test('provider switches to Gemini with model and base URL defaults', () => {
 
   expect(config).toMatchObject({
     provider: 'gemini',
-    apiKey: 'test-key',
+    apiKeys: ['test-key'],
     baseUrl: GEMINI_BASE_URL,
     model: GEMINI_MODEL,
   });
@@ -516,5 +516,111 @@ describe('đọc lý do 429 từ body thật của Google', () => {
     // Log một dòng: body nhiều dòng làm log Actions vỡ thành nhiều entry.
     expect(lines.every((line) => !line.includes(String.fromCharCode(10)))).toBe(true);
     warn.mockRestore();
+  });
+});
+
+function keysSent(mock: { mock: { calls: unknown[][] } }): string[] {
+  return mock.mock.calls.map((call) => {
+    const headers = (call[1] as RequestInit).headers as Record<string, string>;
+    return (headers['authorization'] ?? '').replace(/^Bearer /, '');
+  });
+}
+
+// Quota free tier tính theo project chứ không theo key, và mỗi key ở đây thuộc
+// một project riêng. Vì vậy thang được duyệt theo bậc trước, key sau: vắt hết
+// mọi key ở bậc tốt nhất rồi mới chịu tụt xuống model yếu hơn.
+describe('vòng key nhiều project', () => {
+  const req = buildRewriteRequest(input, 'bac-1');
+
+  test('tách GEMINI_API_KEY nhiều key ngăn bằng dấu phẩy', () => {
+    const config = resolveRewriteConfig({ REWRITE_PROVIDER: 'gemini', GEMINI_API_KEY: 'k1, k2 ,, k3 ' });
+
+    expect(config.apiKeys).toEqual(['k1', 'k2', 'k3']);
+  });
+
+  test('không có key thì danh sách rỗng chứ không phải [undefined]', () => {
+    expect(resolveRewriteConfig({ REWRITE_PROVIDER: 'gemini' }).apiKeys).toEqual([]);
+  });
+
+  test('budget nhân theo số key vì mỗi project có hạn mức riêng', () => {
+    expect(ladderBudget(resolveModelLadder({}), undefined, 3)).toBe((18 + 18 + 450 + 450) * 3);
+  });
+
+  test('key đầu hết hạn mức ngày thì đổi key, vẫn giữ nguyên bậc model', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(quota429('GenerateRequestsPerDayPerProjectPerModel-FreeTier'))
+      .mockResolvedValueOnce(okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createRewriteClient(['k1', 'k2'], 'https://p/v1', [
+      { model: 'bac-1', rpm: 600, rpd: 20 },
+      { model: 'bac-2', rpm: 600, rpd: 500 },
+    ]);
+    await client.complete(req);
+
+    expect(modelsSent(fetchMock)).toEqual(['bac-1', 'bac-1']);
+    expect(keysSent(fetchMock)).toEqual(['k1', 'k2']);
+  });
+
+  test('chỉ tụt bậc khi mọi key đều cạn ở bậc đó', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(quota429('GenerateRequestsPerDayPerProjectPerModel-FreeTier'))
+      .mockResolvedValueOnce(quota429('GenerateRequestsPerDayPerProjectPerModel-FreeTier'))
+      .mockResolvedValueOnce(okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createRewriteClient(['k1', 'k2'], 'https://p/v1', [
+      { model: 'bac-1', rpm: 600, rpd: 20 },
+      { model: 'bac-2', rpm: 600, rpd: 500 },
+    ]);
+    await client.complete(req);
+
+    expect(modelsSent(fetchMock)).toEqual(['bac-1', 'bac-1', 'bac-2']);
+    expect(keysSent(fetchMock)).toEqual(['k1', 'k2', 'k1']);
+  });
+
+  test('gọi liên tiếp thì xoay vòng key để nhân throughput', async () => {
+    const fetchMock = vi.fn(async () => okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createRewriteClient(['k1', 'k2'], 'https://p/v1', [
+      { model: 'bac-1', rpm: 600, rpd: 500 },
+    ]);
+    for (let i = 0; i < 4; i += 1) await client.complete(req);
+
+    expect(keysSent(fetchMock)).toEqual(['k1', 'k2', 'k1', 'k2']);
+  });
+
+  test('hạn mức ngày đếm riêng cho từng key ở cùng một bậc', async () => {
+    const fetchMock = vi.fn(async () => okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    // rpd 3 -> mỗi key được 2 lượt ở bậc 1, hai key thành 4 lượt.
+    const client = createRewriteClient(['k1', 'k2'], 'https://p/v1', [
+      { model: 'bac-1', rpm: 600, rpd: 3 },
+      { model: 'bac-2', rpm: 600, rpd: 500 },
+    ]);
+    for (let i = 0; i < 5; i += 1) await client.complete(req);
+
+    expect(modelsSent(fetchMock)).toEqual(['bac-1', 'bac-1', 'bac-1', 'bac-1', 'bac-2']);
+  });
+
+  test('một key vẫn chạy y như cũ', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(quota429('GenerateRequestsPerDayPerProjectPerModel-FreeTier'))
+      .mockResolvedValueOnce(okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createRewriteClient('k', 'https://p/v1', [
+      { model: 'bac-1', rpm: 600, rpd: 20 },
+      { model: 'bac-2', rpm: 600, rpd: 500 },
+    ]);
+    await client.complete(req);
+
+    expect(modelsSent(fetchMock)).toEqual(['bac-1', 'bac-2']);
+    expect(keysSent(fetchMock)).toEqual(['k', 'k']);
   });
 });

@@ -80,11 +80,16 @@ export function resolveModelLadder(env: Record<string, string | undefined>): Lad
   return ladderFor(listed.length > 0 ? listed : DEFAULT_MODEL_LADDER);
 }
 
-/** Trần số bài cho cả run: tổng hạn mức ngày của mọi bậc. */
-export function ladderBudget(rungs: LadderRung[], override?: string): number {
+/**
+ * Trần số bài cho cả run: tổng hạn mức ngày của mọi bậc, nhân số key. Quota
+ * free tier tính theo project, nên mỗi key ở một project riêng là một lần
+ * hạn mức đầy đủ.
+ */
+export function ladderBudget(rungs: LadderRung[], override?: string, keyCount = 1): number {
   const asked = Number(override);
   if (Number.isInteger(asked) && asked > 0) return asked;
-  return rungs.reduce((total, rung) => total + Math.floor(rung.rpd * 0.9), 0);
+  const perKey = rungs.reduce((total, rung) => total + Math.floor(rung.rpd * 0.9), 0);
+  return perKey * Math.max(1, keyCount);
 }
 
 export function limitsFor(model: string): { rpm: number; rpd: number } {
@@ -164,10 +169,19 @@ export type RewriteProvider = 'bai' | 'gemini';
 
 export type RewriteConfig = {
   provider: RewriteProvider;
-  apiKey: string | undefined;
+  /** Nhiều key = nhiều project = nhiều lần hạn mức free tier. */
+  apiKeys: string[];
   baseUrl: string;
   model: string;
 };
+
+/** Một secret chứa nhiều key ngăn bằng dấu phẩy: thêm key sau chỉ sửa một chỗ. */
+export function parseApiKeys(raw: string | undefined): string[] {
+  return (raw ?? '')
+    .split(',')
+    .map((key) => key.trim())
+    .filter((key) => key !== '');
+}
 
 /**
  * Chọn provider viết lại qua biến môi trường, mặc định giữ BAI cũ:
@@ -178,18 +192,22 @@ export function resolveRewriteConfig(env: Record<string, string | undefined> = p
   // Nếu không ghi rõ mà có key Gemini thì dùng Gemini luôn — đỡ phụ thuộc
   // vào một secret cấu hình dễ gõ sai.
   const raw = (optional(env, 'REWRITE_PROVIDER') ?? '').toLowerCase();
-  if (raw === 'bai') {
-    return { provider: 'bai', apiKey: optional(env, 'BAI_API_KEY'), baseUrl: BAI_BASE_URL, model: REWRITE_MODEL };
-  }
+  const bai = (): RewriteConfig => ({
+    provider: 'bai',
+    apiKeys: parseApiKeys(optional(env, 'BAI_API_KEY')),
+    baseUrl: BAI_BASE_URL,
+    model: REWRITE_MODEL,
+  });
+  if (raw === 'bai') return bai();
   if (raw === 'gemini' || (!raw && optional(env, 'GEMINI_API_KEY'))) {
     return {
       provider: 'gemini',
-      apiKey: optional(env, 'GEMINI_API_KEY'),
+      apiKeys: parseApiKeys(optional(env, 'GEMINI_API_KEY')),
       baseUrl: optional(env, 'GEMINI_BASE_URL') ?? GEMINI_BASE_URL,
       model: optional(env, 'GEMINI_MODEL') ?? GEMINI_MODEL,
     };
   }
-  return { provider: 'bai', apiKey: optional(env, 'BAI_API_KEY'), baseUrl: BAI_BASE_URL, model: REWRITE_MODEL };
+  return bai();
 }
 
 // 429 không nằm ở đây: trần free tier tính theo request, nên thử lại chỉ đốt
@@ -261,40 +279,73 @@ class RungDeadError extends Error {
   }
 }
 
+/**
+ * Một ô = một cặp (bậc model, key). Hạn mức và nhịp gọi giữ riêng cho từng ô
+ * vì RPM/RPD của Google tính theo từng cặp project-model.
+ */
 interface RungState {
   /** undefined = giữ model có trong request (đường BAI cũ). */
   model: string | undefined;
+  /** Thứ tự bậc: chọn ô luôn ưu tiên bậc nhỏ nhất còn sống. */
+  tier: number;
+  apiKey: string | undefined;
   intervalMs: number;
   remaining: number;
   nextSlot: number;
   dead: boolean;
 }
 
-function toRungStates(pace: number | LadderRung[]): RungState[] {
+function toRungStates(pace: number | LadderRung[], keys: (string | undefined)[]): RungState[] {
   if (typeof pace === 'number') {
-    return [{ model: undefined, intervalMs: pace, remaining: Infinity, nextSlot: 0, dead: false }];
+    return keys.map((apiKey) => ({
+      model: undefined,
+      tier: 0,
+      apiKey,
+      intervalMs: pace,
+      remaining: Infinity,
+      nextSlot: 0,
+      dead: false,
+    }));
   }
-  return pace.map((rung) => ({
-    model: rung.model,
-    // Nhịp suy từ RPM của chính bậc đó, không tra lại bảng: người gọi có thể
-    // truyền hạn mức khác bảng (test, hoặc GEMINI_MODELS trỏ model mới).
-    intervalMs: Math.ceil((60_000 / rung.rpm) * SAFETY),
-    remaining: Math.floor(rung.rpd * 0.9),
-    nextSlot: 0,
-    dead: false,
-  }));
+  // Trải theo bậc trước, key sau: vắt hết mọi key ở model tốt nhất rồi mới tụt.
+  return pace.flatMap((rung, tier) =>
+    keys.map((apiKey) => ({
+      model: rung.model,
+      tier,
+      apiKey,
+      // Nhịp suy từ RPM của chính bậc đó, không tra lại bảng: người gọi có thể
+      // truyền hạn mức khác bảng (test, hoặc GEMINI_MODELS trỏ model mới).
+      intervalMs: Math.ceil((60_000 / rung.rpm) * SAFETY),
+      remaining: Math.floor(rung.rpd * 0.9),
+      nextSlot: 0,
+      dead: false,
+    })),
+  );
 }
 
 export function createRewriteClient(
-  apiKey = process.env['BAI_API_KEY'],
+  apiKeys: string | string[] | undefined = process.env['BAI_API_KEY'],
   baseUrl = BAI_BASE_URL,
   pace: number | LadderRung[] = 0,
 ): RewriteDeps {
-  // Nhịp gọi và hạn mức giữ theo từng bậc: RPM/RPD của Google tính riêng cho
-  // mỗi model, nên hai bài chạy song song vẫn phải nối đuôi trong cùng bậc.
-  const rungs = toRungStates(pace);
-  const usable = (): RungState | undefined =>
-    rungs.find((rung) => !rung.dead && rung.remaining > 0);
+  const listed = Array.isArray(apiKeys) ? apiKeys : parseApiKeys(apiKeys);
+  // Không có key vẫn phải còn một ô để giữ nguyên hành vi cũ (và để lỗi xác
+  // thực của provider nổi lên, thay vì im lặng coi như hết quota).
+  const keys: (string | undefined)[] = listed.length > 0 ? listed : [undefined];
+  const rungs = toRungStates(pace, keys);
+
+  /**
+   * Bậc tốt nhất còn sống, và trong bậc đó chọn ô rảnh sớm nhất — nhờ vậy các
+   * key thay nhau gọi thay vì xếp hàng sau cùng một key, nhân được throughput.
+   */
+  const usable = (): RungState | undefined => {
+    const live = rungs.filter((rung) => !rung.dead && rung.remaining > 0);
+    if (live.length === 0) return undefined;
+    const tier = Math.min(...live.map((rung) => rung.tier));
+    return live
+      .filter((rung) => rung.tier === tier)
+      .reduce((best, rung) => (rung.nextSlot < best.nextSlot ? rung : best));
+  };
 
   const takeSlot = async (rung: RungState): Promise<void> => {
     if (rung.intervalMs <= 0) return;
@@ -304,13 +355,17 @@ export function createRewriteClient(
     if (startAt > now) await sleep(startAt - now);
   };
 
+  /** Key nào cạn chỉ nói theo thứ tự, không log giá trị key ra Actions. */
+  const label = (rung: RungState): string =>
+    `${rung.model ?? 'mặc định'}${keys.length > 1 ? ` (key #${keys.indexOf(rung.apiKey) + 1})` : ''}`;
+
   const killRung = (rung: RungState, why: string): void => {
     if (rung.dead) return; // hai luồng cùng đụng 429 của một bậc
     rung.dead = true;
     const next = usable();
     console.warn(
-      `rewrite: bậc ${rung.model ?? 'mặc định'} dừng (${oneLine(why)})` +
-        (next ? `, tụt xuống ${next.model}` : ', hết thang'),
+      `rewrite: ${label(rung)} dừng (${oneLine(why)})` +
+        (next ? `, chuyển sang ${label(next)}` : ', hết thang'),
     );
   };
 
@@ -333,7 +388,7 @@ export function createRewriteClient(
         response = await fetch(`${baseUrl}/chat/completions`, {
           method: 'POST',
           headers: {
-            authorization: `Bearer ${apiKey}`,
+            authorization: `Bearer ${rung.apiKey}`,
             'content-type': 'application/json',
           },
           body,

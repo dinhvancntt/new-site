@@ -34,7 +34,10 @@ jobs:
           # Thiếu dòng GEMINI_API_KEY ở đây là runner luôn rơi về bai, dù
           # secret Gemini đã nằm trên repo.
           REWRITE_PROVIDER: ${{ secrets.REWRITE_PROVIDER }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # Nhiều key ngăn bằng dấu phẩy: quota free tier tính theo project nên
+          # mỗi key là một lần hạn mức nữa. Secret trống thì code tự bỏ qua, vì
+          # vậy cứ để sẵn chỗ cho key thứ ba trở đi.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }},${{ secrets.GEMINI_API_KEY_2 }},${{ secrets.GEMINI_API_KEY_3 }}
           BAI_API_KEY: ${{ secrets.BAI_API_KEY }}
           # Dùng biến repo (không phải secret) để log không bị che tên model —
           # nhịp gọi và budget suy ra từ trần free tier của đúng model này.

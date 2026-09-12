@@ -38,10 +38,20 @@ describe('workflow ingest', () => {
     expect(keys).toContain('REWRITE_MAX_PER_RUN');
   });
 
+  test('gộp nhiều secret key Gemini vào một biến', () => {
+    const text = readFileSync(WORKFLOW, 'utf8');
+    const line = text.split('\n').find((l) => l.trim().startsWith('GEMINI_API_KEY:'));
+    const secrets = [...(line ?? '').matchAll(/secrets\.([A-Z][A-Z0-9_]*)/g)].map((m) => m[1]);
+    // Mỗi key là một project = một lần hạn mức free. Thêm key phải là thêm
+    // secret, không phải sửa code rồi chờ deploy.
+    expect(new Set(secrets).size).toBeGreaterThan(1);
+    expect(line).toContain(',');
+  });
+
   test('env được truyền đủ cho provider mà code thực sự chọn', () => {
     const keys = ingestStepEnv();
     const env = Object.fromEntries(keys.map((k) => [k, 'x']));
     const cfg = resolveRewriteConfig(env);
-    expect(cfg.apiKey).toBeTruthy();
+    expect(cfg.apiKeys.length).toBeGreaterThan(0);
   });
 });

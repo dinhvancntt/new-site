@@ -32,17 +32,19 @@ export async function main(): Promise<number> {
   // trên thì client tự tụt xuống bậc dưới, cả run không chết vì một model.
   const ladder = gemini ? resolveModelLadder(process.env) : [];
   const pace = gemini ? ladder : 0;
+  const keyCount = rewriteConfig.apiKeys.length;
   const maxRewrites = gemini
-    ? ladderBudget(ladder, process.env['REWRITE_MAX_PER_RUN'])
+    ? ladderBudget(ladder, process.env['REWRITE_MAX_PER_RUN'], keyCount)
     : undefined;
   console.log(
     `rewrite provider: ${rewriteConfig.provider}` +
       (gemini
-        ? ` thang=[${ladder.map((rung) => `${rung.model} ${rung.rpm}rpm/${rung.rpd}rpd`).join(' -> ')}] budget=${maxRewrites}`
+        ? ` thang=[${ladder.map((rung) => `${rung.model} ${rung.rpm}rpm/${rung.rpd}rpd`).join(' -> ')}]` +
+          ` key=${keyCount} budget=${maxRewrites}`
         : ` (${rewriteConfig.model})`),
   );
   const db = createDb(requireEnv('DATABASE_URL'));
-  const rewriteDeps = createRewriteClient(rewriteConfig.apiKey, rewriteConfig.baseUrl, pace);
+  const rewriteDeps = createRewriteClient(rewriteConfig.apiKeys, rewriteConfig.baseUrl, pace);
 
   try {
     const { runId, counters, skipped, writtenPaths } = await runIngest(
