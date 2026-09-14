@@ -12,7 +12,10 @@
     "typecheck": "tsc -b && tsc -p apps/web --noEmit",
     "ingest": "tsx packages/ingest/src/index.ts",
     "dev": "npm run dev --workspace @news/web",
-    "build": "npm run build --workspace @news/web"
+    "build": "npm run build --workspace @news/web",
+    "ranks": "tsx packages/ingest/src/ranks-cli.ts",
+    "recent": "tsx packages/ingest/src/recent-cli.ts",
+    "publish": "tsx packages/ingest/src/publish-cli.ts"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
