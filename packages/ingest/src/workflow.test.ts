@@ -48,6 +48,22 @@ describe('workflow ingest', () => {
     expect(line).toContain(',');
   });
 
+  test('không còn chạy tự động theo lịch', () => {
+    const text = readFileSync(WORKFLOW, 'utf8');
+    // Bỏ nhịp hằng ngày là quyết định nội dung, không phải tinh chỉnh: mỗi lượt
+    // chạy tự động lại thêm một bài viết lại bằng máy vào site đang bị Google
+    // đánh giá là nội dung sản xuất hàng loạt. Giữ test để nhịp này không lặng
+    // lẽ quay lại.
+    expect(text).not.toMatch(/^\s*schedule:/m);
+    expect(text).not.toMatch(/cron:/);
+  });
+
+  test('vẫn chạy được bằng tay', () => {
+    const text = readFileSync(WORKFLOW, 'utf8');
+    // Tắt lịch nhưng vẫn phải gọi được khi cần đăng bài tự viết.
+    expect(text).toMatch(/^\s*workflow_dispatch:/m);
+  });
+
   test('env được truyền đủ cho provider mà code thực sự chọn', () => {
     const keys = ingestStepEnv();
     const env = Object.fromEntries(keys.map((k) => [k, 'x']));

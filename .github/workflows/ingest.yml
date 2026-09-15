@@ -1,9 +1,9 @@
 name: ingest
 
+# Chỉ chạy khi gọi tay. Nhịp hằng ngày đã bỏ: 279 bài viết lại bằng máy trong
+# 3 tháng đổi lại 1 nhấp từ tìm kiếm, đúng hình mẫu "scaled content abuse" mà
+# Google phạt. Thêm bài giờ phải là quyết định của người, từng bài một.
 on:
-  schedule:
-    # Mỗi ngày một lần lúc 0h UTC (7h sáng Việt Nam). GitHub có thể trễ vài phút.
-    - cron: '0 0 * * *'
   workflow_dispatch:
 
 concurrency:
