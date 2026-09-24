@@ -36,6 +36,13 @@ describe('chuyên mục', () => {
     }
   });
 
+  // Bài esports đầu tiên (PUBG Asia Stars) đã nằm trong DB; thiếu route thì
+  // trang bài và /c/esports cùng trả 404 dù nội dung đã publish.
+  test('esports định tuyến được nhưng chưa lên thanh điều hướng', () => {
+    expect(isCategory('esports')).toBe(true);
+    expect(NAV_CATEGORIES).not.toContain('esports');
+  });
+
   test('bỏ qua chuỗi không phải chuyên mục', () => {
     expect(isCategory('khong-ton-tai')).toBe(false);
   });

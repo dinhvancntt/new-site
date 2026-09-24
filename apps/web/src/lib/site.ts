@@ -33,6 +33,7 @@ export const CATEGORIES = [
   'technology',
   'sports',
   'health',
+  'esports',
 ] as const;
 
 export type Category = (typeof CATEGORIES)[number];
@@ -62,6 +63,7 @@ export const CATEGORY_LABEL: Record<Lang, Record<Category, string>> = {
     technology: 'Công nghệ',
     sports: 'Thể thao',
     health: 'Sức khoẻ',
+    esports: 'Thể thao điện tử',
   },
   en: {
     motorsport: 'Motorsport',
@@ -72,6 +74,7 @@ export const CATEGORY_LABEL: Record<Lang, Record<Category, string>> = {
     technology: 'Technology',
     sports: 'Sports',
     health: 'Health',
+    esports: 'Esports',
   },
 };
 
@@ -93,6 +96,8 @@ export const CATEGORY_DESCRIPTION: Record<Lang, Record<Category, string>> = {
     technology: 'Tin công nghệ mới nhất: AI, chip, thiết bị, startup và chuyển đổi số trên toàn thế giới, cập nhật liên tục.',
     sports: 'Tin thể thao mới nhất: bóng đá, quần vợt, đua xe và các giải đấu lớn toàn cầu, kết quả và chuyển nhượng.',
     health: 'Tin sức khỏe mới nhất: y tế, dịch bệnh, dinh dưỡng và nghiên cứu khoa học đáng chú ý trên thế giới.',
+    esports:
+      'Tin thể thao điện tử mới nhất: PUBG, LMHT, Dota 2 và các giải đấu lớn — kết quả, án phạt và chuyển nhượng tuyển thủ.',
   },
   en: {
     motorsport:
@@ -106,6 +111,8 @@ export const CATEGORY_DESCRIPTION: Record<Lang, Record<Category, string>> = {
     technology: 'Latest technology news: AI, chips, gadgets, startups and digital transformation across the globe.',
     sports: 'Latest sports news: football, tennis, racing and major tournaments worldwide, scores and transfers.',
     health: 'Latest health news: medicine, outbreaks, nutrition and notable research from around the world.',
+    esports:
+      'Latest esports news: PUBG, League of Legends, Dota 2 and major tournaments — results, sanctions and roster moves.',
   },
 };
 
