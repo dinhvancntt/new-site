@@ -22,9 +22,11 @@ const config: NextConfig = {
   // Hai package workspace ship thẳng TypeScript nên Next phải tự biên dịch chúng.
   transpilePackages: ['@news/db', '@news/queries'],
 
-  // `/` không có nội dung riêng; 307 để sau này còn đổi được sang dò ngôn ngữ.
+  // `/` không có nội dung riêng. Phải là 308 permanent: với 307 Google coi đây
+  // là tạm thời nên giữ `/` lại trong index như URL riêng, trùng lặp với `/vi`.
+  // `/vi` cũng là hreflang x-default nên gộp về đó là đúng.
   async redirects() {
-    return [{ source: '/', destination: '/vi', permanent: false }];
+    return [{ source: '/', destination: '/vi', permanent: true }];
   },
 };
 
