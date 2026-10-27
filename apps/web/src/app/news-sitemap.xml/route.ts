@@ -1,6 +1,7 @@
 import { listLatest } from '@news/queries';
 
 import { getDb } from '@/lib/db';
+import { LANGS } from '@/lib/lang';
 import { buildNewsSitemapXml, filterNewsItems } from '@/lib/news-sitemap';
 import { SITE_NAME, siteUrl } from '@/lib/site';
 
@@ -10,15 +11,16 @@ export const revalidate = 300;
 export async function GET() {
   const db = getDb();
 
-  const [vi, en] = await Promise.all([
-    listLatest(db, 'vi', { limit: 1000 }),
-    listLatest(db, 'en', { limit: 1000 }),
-  ]);
+  // Chỉ ngôn ngữ còn xuất bản: URL của ngôn ngữ đã ngừng nay 308, mà sitemap
+  // chứa URL chuyển hướng thì Google News bỏ qua cả mục đó.
+  const perLang = await Promise.all(
+    LANGS.map(async (lang) => {
+      const rows = await listLatest(db, lang, { limit: 1000 });
+      return rows.map((a) => ({ lang, slug: a.slug, title: a.title, publishedAt: a.publishedAt }));
+    }),
+  );
 
-  const items = [
-    ...vi.map((a) => ({ lang: 'vi' as const, slug: a.slug, title: a.title, publishedAt: a.publishedAt })),
-    ...en.map((a) => ({ lang: 'en' as const, slug: a.slug, title: a.title, publishedAt: a.publishedAt })),
-  ];
+  const items = perLang.flat();
 
   const xml = buildNewsSitemapXml({
     siteUrl: siteUrl(),
