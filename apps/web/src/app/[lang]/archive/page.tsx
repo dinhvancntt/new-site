@@ -7,7 +7,7 @@ import { Masthead } from '@/components/Masthead';
 import { River } from '@/components/River';
 import { getDb } from '@/lib/db';
 import { LANGS, parseLang } from '@/lib/lang';
-import { STRINGS, hreflangAlternates } from '@/lib/site';
+import { STRINGS } from '@/lib/site';
 
 export const revalidate = 300;
 
@@ -45,7 +45,7 @@ export async function generateMetadata({ params, searchParams }: Params): Promis
   return {
     title,
     description,
-    alternates: { canonical, languages: hreflangAlternates('/vi/archive', '/en/archive') },
+    alternates: { canonical },
     openGraph: { type: 'website', url: canonical, title, description },
     // Trang 2+ chỉ để crawler lần theo link, không cần lên kết quả tìm kiếm.
     ...(page > 1 ? { robots: { index: false, follow: true } } : {}),

@@ -10,14 +10,6 @@ export const SITE_DESCRIPTION: Record<Lang, string> = {
 
 export const OG_LOCALE: Record<Lang, string> = { vi: 'vi_VN', en: 'en_US' };
 
-/**
- * Cặp hreflang song ngữ kèm x-default trỏ về bản Việt (bản chính).
- * Google dùng x-default khi không khớp ngôn ngữ nào của người tìm kiếm.
- */
-export function hreflangAlternates(viPath: string, enPath: string): Record<string, string> {
-  return { 'x-default': viPath, vi: viPath, en: enPath };
-}
-
 /** Ngách đang thu thập (khớp packages/ingest FEEDS) — chỉ những mục này lên nav. */
 export const NAV_CATEGORIES = ['motorsport', 'cycling', 'equestrian'] as const;
 

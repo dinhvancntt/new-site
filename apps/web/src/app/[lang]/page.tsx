@@ -8,7 +8,7 @@ import { Masthead } from '@/components/Masthead';
 import { River } from '@/components/River';
 import { getDb } from '@/lib/db';
 import { LANGS, parseLang } from '@/lib/lang';
-import { SITE_DESCRIPTION, SITE_NAME, STRINGS, hreflangAlternates, siteUrl } from '@/lib/site';
+import { SITE_DESCRIPTION, SITE_NAME, STRINGS, siteUrl } from '@/lib/site';
 
 export const revalidate = 300;
 
@@ -30,7 +30,6 @@ export async function generateMetadata({
     description: SITE_DESCRIPTION[lang],
     alternates: {
       canonical: `/${lang}`,
-      languages: hreflangAlternates('/vi', '/en'),
     },
     openGraph: {
       type: 'website',

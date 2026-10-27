@@ -1,7 +1,7 @@
 import { cache } from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import { getArticle, listByCategory, siblingSlug } from '@news/queries';
 import { Footer } from '@/components/Footer';
 import { Masthead } from '@/components/Masthead';
@@ -13,8 +13,15 @@ import { toParagraphs } from '@/lib/body';
 import { getDb } from '@/lib/db';
 import { formatDateTime } from '@/lib/format';
 import { imageUrl } from '@/lib/image';
-import { otherLang, parseLang, type Lang } from '@/lib/lang';
-import { SITE_NAME, STRINGS, categoryLabel, hreflangAlternates, siteUrl } from '@/lib/site';
+import {
+  DEFAULT_LANG,
+  isRetiredLang,
+  otherLang,
+  parseLang,
+  retiredArticleTarget,
+  type Lang,
+} from '@/lib/lang';
+import { SITE_NAME, STRINGS, categoryLabel, siteUrl } from '@/lib/site';
 
 // Bài đã đăng thì nội dung cố định, nên cache vĩnh viễn. Không dựng sẵn bài nào
 // lúc build — trang sinh ở lần truy cập đầu rồi nằm luôn trong cache.
@@ -34,12 +41,12 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { lang: rawLang, slug } = await params;
   const lang = parseLang(rawLang);
   if (!lang) return {};
+  // Ngôn ngữ đã ngừng thì trang luôn 308, metadata không bao giờ được dùng tới.
+  if (isRetiredLang(lang)) return {};
 
   const article = await loadArticle(lang, slug);
   if (!article) return {};
 
-  const other = otherLang(lang);
-  const otherSlug = await loadSibling(article.articleId, other);
   const description = article.summary.length > 160 ? `${article.summary.slice(0, 157)}…` : article.summary;
   const ogImage = imageUrl(article.imageUrl, { width: 1200, height: 630 });
   const label = categoryLabel(lang, article.category);
@@ -48,13 +55,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
     title: article.title,
     description,
     authors: [{ name: article.sourceName }],
-    alternates: {
-      canonical: `/${lang}/${slug}`,
-      // Hai bản ngôn ngữ của cùng một bài trỏ về nhau; thiếu bản kia thì hreflang chỉ còn bản hiện tại.
-      languages: otherSlug
-        ? hreflangAlternates(`/vi/${lang === 'vi' ? slug : otherSlug}`, `/en/${lang === 'en' ? slug : otherSlug}`)
-        : { 'x-default': `/${lang}/${slug}`, [lang]: `/${lang}/${slug}` },
-    },
+    alternates: { canonical: `/${lang}/${slug}` },
     openGraph: {
       type: 'article',
       url: `/${lang}/${slug}`,
@@ -79,6 +80,17 @@ export default async function ArticlePage({ params }: Params) {
   const { lang: rawLang, slug } = await params;
   const lang = parseLang(rawLang);
   if (!lang) notFound();
+
+  // Tiếng Việt đã ngừng: slug hai ngôn ngữ khác nhau nên phải tra bản tiếng Anh
+  // cùng `article_id` rồi 308 sang đó, thay vì ghép chuỗi ở tầng next.config.
+  if (isRetiredLang(lang)) {
+    const retired = await loadArticle(lang, slug);
+    const target = retired
+      ? retiredArticleTarget(await loadSibling(retired.articleId, DEFAULT_LANG))
+      : null;
+    if (!target) notFound();
+    permanentRedirect(target);
+  }
 
   const article = await loadArticle(lang, slug);
   if (!article) notFound();

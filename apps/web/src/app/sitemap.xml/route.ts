@@ -1,6 +1,7 @@
 import { listSitemapEntries } from '@news/queries';
 
 import { getDb } from '@/lib/db';
+import { DEFAULT_LANG } from '@/lib/lang';
 import { buildSitemapXml } from '@/lib/sitemap';
 import { CATEGORIES, siteUrl } from '@/lib/site';
 
@@ -9,23 +10,18 @@ export const revalidate = 300;
 export async function GET() {
   const db = getDb();
 
-  const [vi, en] = await Promise.all([
-    listSitemapEntries(db, 'vi', { limit: 2000 }),
-    listSitemapEntries(db, 'en', { limit: 2000 }),
-  ]);
-
-  const toEntries = (articles: Awaited<ReturnType<typeof listSitemapEntries>>) =>
-    articles.map((article) => ({
-      slug: article.slug,
-      publishedAt: article.publishedAt,
-      articleId: article.articleId,
-      imageUrl: article.imageUrl,
-    }));
+  // Chỉ tiếng Anh: bản tiếng Việt ngừng xuất bản 2026-10 và mọi URL `/vi` giờ
+  // chỉ 308, nên không đưa vào sitemap.
+  const articles = await listSitemapEntries(db, DEFAULT_LANG, { limit: 2000 });
 
   const xml = buildSitemapXml({
     siteUrl: siteUrl(),
     categories: CATEGORIES,
-    articlesByLang: { vi: toEntries(vi), en: toEntries(en) },
+    articles: articles.map((article) => ({
+      slug: article.slug,
+      publishedAt: article.publishedAt,
+      imageUrl: article.imageUrl,
+    })),
   });
 
   return new Response(xml, {

@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: `${SITE_NAME} — Tin quốc tế tổng hợp và tóm lược`,
     short_name: SITE_NAME,
     description: SITE_DESCRIPTION.vi,
-    start_url: '/vi',
+    start_url: '/en',
     display: 'standalone',
     background_color: '#faf9f6',
     theme_color: '#faf9f6',

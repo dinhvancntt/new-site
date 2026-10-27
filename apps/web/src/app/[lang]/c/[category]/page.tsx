@@ -6,7 +6,7 @@ import { Masthead } from '@/components/Masthead';
 import { River } from '@/components/River';
 import { getDb } from '@/lib/db';
 import { LANGS, parseLang } from '@/lib/lang';
-import { CATEGORIES, CATEGORY_DESCRIPTION, CATEGORY_LABEL, SITE_NAME, STRINGS, hreflangAlternates, isCategory, siteUrl } from '@/lib/site';
+import { CATEGORIES, CATEGORY_DESCRIPTION, CATEGORY_LABEL, SITE_NAME, STRINGS, isCategory, siteUrl } from '@/lib/site';
 
 export const revalidate = 300;
 
@@ -30,7 +30,6 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
     description,
     alternates: {
       canonical: `/${lang}/c/${category}`,
-      languages: hreflangAlternates(`/vi/c/${category}`, `/en/c/${category}`),
     },
     openGraph: {
       type: 'website',

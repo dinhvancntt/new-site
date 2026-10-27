@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { Footer } from '@/components/Footer';
 import { Masthead } from '@/components/Masthead';
 import { LANGS, parseLang } from '@/lib/lang';
-import { STRINGS, hreflangAlternates, siteUrl } from '@/lib/site';
+import { STRINGS, siteUrl } from '@/lib/site';
 
 export function generateStaticParams() {
   return LANGS.map((lang) => ({ lang }));
@@ -22,7 +22,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   return {
     title,
     description,
-    alternates: { canonical: `/${lang}/contact`, languages: hreflangAlternates('/vi/contact', '/en/contact') },
+    alternates: { canonical: `/${lang}/contact` },
     openGraph: { type: 'website', url: `/${lang}/contact`, title, description },
   };
 }
@@ -47,7 +47,7 @@ export default async function ContactPage({ params }: Params) {
                   <a className="link-rule" href={`mailto:${email}`}>
                     {email}
                   </a>
-                  . Ghi rõ đường dẫn bài viết (ví dụ {origin}/vi/...) và nội dung cần sửa.
+                  . Ghi rõ đường dẫn bài viết (ví dụ {origin}/en/...) và nội dung cần sửa.
                 </p>
                 <p>Chúng tôi phản hồi trong 24–48 giờ làm việc và ưu tiên yêu cầu từ hãng tin gốc.</p>
               </>

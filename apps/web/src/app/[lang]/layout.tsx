@@ -5,7 +5,7 @@ import { IBM_Plex_Mono, Source_Serif_4 } from 'next/font/google';
 import '../globals.css';
 import { cfBeacon } from '@/lib/beacon';
 import { LANGS, parseLang } from '@/lib/lang';
-import { OG_LOCALE, SITE_DESCRIPTION, SITE_NAME, hreflangAlternates, siteUrl } from '@/lib/site';
+import { OG_LOCALE, SITE_DESCRIPTION, SITE_NAME, siteUrl } from '@/lib/site';
 
 // Bắt buộc có subset 'vietnamese': subset latin-ext không đủ dấu tiếng Việt,
 // thiếu nó thì các chữ như "ế", "ộ" rơi sang font dự phòng và mặt chữ vỡ nhịp.
@@ -51,7 +51,6 @@ export async function generateMetadata({
     alternates: {
       // Canonical mặc định cho trang chủ từng ngôn ngữ; các page con ghi đè.
       canonical: `/${lang}`,
-      languages: hreflangAlternates('/vi', '/en'),
       types: {
         'application/rss+xml': [{ url: `/${lang}/rss.xml`, title: SITE_NAME }],
       },

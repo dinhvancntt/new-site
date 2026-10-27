@@ -12,7 +12,6 @@ export function GET() {
     `  <ShortName>${SITE_NAME}</ShortName>`,
     `  <Description>Tìm tin trên ${SITE_NAME}</Description>`,
     '  <InputEncoding>UTF-8</InputEncoding>',
-    `  <Url type="text/html" template="${origin}/vi/search?q={searchTerms}"/>`,
     `  <Url type="text/html" template="${origin}/en/search?q={searchTerms}"/>`,
     '</OpenSearchDescription>',
     '',

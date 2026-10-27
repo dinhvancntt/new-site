@@ -22,11 +22,24 @@ const config: NextConfig = {
   // Hai package workspace ship thẳng TypeScript nên Next phải tự biên dịch chúng.
   transpilePackages: ['@news/db', '@news/queries'],
 
-  // `/` không có nội dung riêng. Phải là 308 permanent: với 307 Google coi đây
-  // là tạm thời nên giữ `/` lại trong index như URL riêng, trùng lặp với `/vi`.
-  // `/vi` cũng là hreflang x-default nên gộp về đó là đúng.
+  // Phải là 308 permanent: với 307 Google coi đây là tạm thời nên giữ URL cũ
+  // lại trong index như URL riêng, báo trùng lặp và không dồn tín hiệu xếp
+  // hạng sang đích. Tiếng Việt ngừng xuất bản 2026-10 nên `/vi` gộp về `/en`.
+  //
+  // Cố ý KHÔNG có luật bắt tất cả `/vi/:path*`: slug bài tiếng Việt khác slug
+  // tiếng Anh, nên bài phải do route [lang]/[slug] tra `siblingSlug` trong DB
+  // rồi mới chuyển hướng. Các luật dưới chỉ phủ đường dẫn cố định.
   async redirects() {
-    return [{ source: '/', destination: '/vi', permanent: true }];
+    const staticPages = ['about', 'archive', 'contact', 'policy', 'search', 'rss.xml'].map(
+      (path) => ({ source: `/vi/${path}`, destination: `/en/${path}`, permanent: true }),
+    );
+
+    return [
+      { source: '/', destination: '/en', permanent: true },
+      { source: '/vi', destination: '/en', permanent: true },
+      { source: '/vi/c/:category', destination: '/en/c/:category', permanent: true },
+      ...staticPages,
+    ];
   },
 };
 

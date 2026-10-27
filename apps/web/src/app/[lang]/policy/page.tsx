@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { Footer } from '@/components/Footer';
 import { Masthead } from '@/components/Masthead';
 import { LANGS, parseLang } from '@/lib/lang';
-import { SITE_NAME, STRINGS, hreflangAlternates } from '@/lib/site';
+import { SITE_NAME, STRINGS } from '@/lib/site';
 
 export function generateStaticParams() {
   return LANGS.map((lang) => ({ lang }));
@@ -22,7 +22,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   return {
     title,
     description,
-    alternates: { canonical: `/${lang}/policy`, languages: hreflangAlternates('/vi/policy', '/en/policy') },
+    alternates: { canonical: `/${lang}/policy` },
     openGraph: { type: 'website', url: `/${lang}/policy`, title, description },
   };
 }

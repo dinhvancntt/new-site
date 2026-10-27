@@ -1,26 +1,52 @@
 import { describe, expect, test } from 'vitest';
-import { otherLang, parseLang } from './lang';
+import { LANGS, RETIRED_LANGS, isRetiredLang, parseLang, retiredArticleTarget } from './lang';
+
+describe('ngôn ngữ đang xuất bản', () => {
+  test('chỉ còn tiếng Anh', () => {
+    expect(LANGS).toEqual(['en']);
+  });
+
+  test('tiếng Việt nằm trong nhóm đã ngừng', () => {
+    expect(RETIRED_LANGS).toEqual(['vi']);
+  });
+});
 
 describe('parseLang', () => {
-  test('accepts the two supported languages', () => {
+  test('vẫn nhận "vi" để route /vi còn chạy được mà 308 sang /en', () => {
+    // Ngừng xuất bản không đồng nghĩa với 404: 718 URL /vi đang có thứ hạng,
+    // phải định tuyến được thì mới chuyển hướng và giữ lại liên kết trỏ về.
     expect(parseLang('vi')).toBe('vi');
     expect(parseLang('en')).toBe('en');
   });
 
-  test('rejects anything else so the route can 404', () => {
+  test('từ chối giá trị khác để route 404', () => {
     expect(parseLang('fr')).toBeNull();
     expect(parseLang('')).toBeNull();
     expect(parseLang(undefined)).toBeNull();
   });
 
-  test('rejects uppercase because URLs are lowercase', () => {
+  test('từ chối chữ hoa vì URL luôn viết thường', () => {
     expect(parseLang('VI')).toBeNull();
   });
 });
 
-describe('otherLang', () => {
-  test('flips between the language pair', () => {
-    expect(otherLang('vi')).toBe('en');
-    expect(otherLang('en')).toBe('vi');
+describe('isRetiredLang', () => {
+  test('phân biệt ngôn ngữ đã ngừng với ngôn ngữ đang phục vụ', () => {
+    expect(isRetiredLang('vi')).toBe(true);
+    expect(isRetiredLang('en')).toBe(false);
+  });
+});
+
+describe('retiredArticleTarget', () => {
+  test('trỏ sang bài tiếng Anh cùng article_id', () => {
+    expect(retiredArticleTarget('kraton-bans-two-players')).toBe('/en/kraton-bans-two-players');
+  });
+
+  test('không có bản tiếng Anh thì trả null để route 404', () => {
+    // Đẩy về trang chủ sẽ thành soft-404: Google coi là chuyển hướng không
+    // liên quan, bỏ URL khỏi index mà không dồn tín hiệu — tệ hơn 404 thật.
+    expect(retiredArticleTarget(null)).toBeNull();
+    expect(retiredArticleTarget(undefined)).toBeNull();
+    expect(retiredArticleTarget('')).toBeNull();
   });
 });
