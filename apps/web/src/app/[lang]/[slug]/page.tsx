@@ -16,7 +16,7 @@ import { imageUrl } from '@/lib/image';
 import {
   DEFAULT_LANG,
   isRetiredLang,
-  otherLang,
+  switchableLang,
   parseLang,
   retiredArticleTarget,
   type Lang,
@@ -96,8 +96,10 @@ export default async function ArticlePage({ params }: Params) {
   if (!article) notFound();
 
   const t = STRINGS[lang];
-  const other = otherLang(lang);
-  const otherSlug = await loadSibling(article.articleId, other);
+  // Chỉ tra bài song ngữ khi ngôn ngữ kia còn xuất bản; nếu không, nút chuyển
+  // sẽ trỏ vào URL 308 ngay từ trong thân trang.
+  const other = switchableLang(lang);
+  const otherSlug = other ? await loadSibling(article.articleId, other) : null;
   const paragraphs = toParagraphs(article.body);
   const origin = siteUrl().replace(/\/+$/, '');
   const label = categoryLabel(lang, article.category);
@@ -147,7 +149,7 @@ export default async function ArticlePage({ params }: Params) {
       <Masthead
         lang={lang}
         activeCategory={article.category}
-        {...(otherSlug ? { otherLangHref: `/${other}/${otherSlug}` } : {})}
+        {...(other && otherSlug ? { otherLangHref: `/${other}/${otherSlug}` } : {})}
       />
 
       <main className="mx-auto max-w-[1180px] px-5">

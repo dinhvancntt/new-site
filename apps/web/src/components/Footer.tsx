@@ -1,9 +1,10 @@
 import Link from 'next/link';
-import { otherLang, type Lang } from '@/lib/lang';
+import { switchableLang, type Lang } from '@/lib/lang';
 import { NAV_CATEGORIES, CATEGORY_LABEL, SITE_NAME, STRINGS } from '@/lib/site';
 
 export function Footer({ lang }: { lang: Lang }) {
   const t = STRINGS[lang];
+  const switchTo = switchableLang(lang);
 
   return (
     <footer className="mt-16 border-t-2 border-ink">
@@ -47,11 +48,13 @@ export function Footer({ lang }: { lang: Lang }) {
                 {t.policy}
               </Link>
             </li>
-            <li>
-              <Link href={`/${otherLang(lang)}`} className="link-rule">
-                {t.otherLanguage}
-              </Link>
-            </li>
+            {switchTo ? (
+              <li>
+                <Link href={`/${switchTo}`} className="link-rule">
+                  {t.otherLanguage}
+                </Link>
+              </li>
+            ) : null}
           </ul>
         </div>
 

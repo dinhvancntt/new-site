@@ -38,3 +38,14 @@ export function retiredArticleTarget(enSlug: string | null | undefined): string 
 export function otherLang(lang: Lang): Lang {
   return lang === 'vi' ? 'en' : 'vi';
 }
+
+/**
+ * Ngôn ngữ để mời người đọc chuyển sang, hoặc null khi không còn lựa chọn nào.
+ * Trang /en không được link sang /vi: URL đó nay 308, mà site tự trỏ liên kết
+ * nội bộ vào chuyển hướng thì vừa phí crawl budget vừa báo với Google rằng
+ * nhánh đã ngừng vẫn là đích hợp lệ.
+ */
+export function switchableLang(lang: Lang): Lang | null {
+  const other = otherLang(lang);
+  return LANGS.includes(other) ? other : null;
+}

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { SearchBox } from './SearchBox';
-import { otherLang, type Lang } from '@/lib/lang';
+import { switchableLang, type Lang } from '@/lib/lang';
 import { NAV_CATEGORIES, CATEGORY_LABEL, SITE_NAME, STRINGS } from '@/lib/site';
 
 export function Masthead({
@@ -18,6 +18,8 @@ export function Masthead({
 }) {
   const t = STRINGS[lang];
   const SiteNameTag = siteNameAs;
+  const switchTo = switchableLang(lang);
+  const langHref = otherLangHref ?? (switchTo ? `/${switchTo}` : null);
 
   return (
     <header>
@@ -25,12 +27,16 @@ export function Masthead({
         <div className="mx-auto flex max-w-[1180px] items-center justify-between gap-4 px-5 py-2">
           <p className="slugline hidden sm:block">{t.tagline}</p>
           <div className="slugline flex items-center gap-3">
-            <Link href={otherLangHref ?? `/${otherLang(lang)}`} className="link-rule text-ink">
-              {t.otherLanguage}
-            </Link>
-            <span aria-hidden className="text-rule-strong">
-              ·
-            </span>
+            {langHref ? (
+              <>
+                <Link href={langHref} className="link-rule text-ink">
+                  {t.otherLanguage}
+                </Link>
+                <span aria-hidden className="text-rule-strong">
+                  ·
+                </span>
+              </>
+            ) : null}
             <Link href={`/${lang}/rss.xml`} className="link-rule">
               RSS
             </Link>

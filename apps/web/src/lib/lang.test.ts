@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { LANGS, RETIRED_LANGS, isRetiredLang, parseLang, retiredArticleTarget } from './lang';
+import { LANGS, RETIRED_LANGS, isRetiredLang,
+  switchableLang, parseLang, retiredArticleTarget } from './lang';
 
 describe('ngôn ngữ đang xuất bản', () => {
   test('chỉ còn tiếng Anh', () => {
@@ -48,5 +49,18 @@ describe('retiredArticleTarget', () => {
     expect(retiredArticleTarget(null)).toBeNull();
     expect(retiredArticleTarget(undefined)).toBeNull();
     expect(retiredArticleTarget('')).toBeNull();
+  });
+});
+
+describe('switchableLang', () => {
+  // Masthead/Footer từng luôn render link sang ngôn ngữ "kia". Sau khi ngừng
+  // tiếng Việt, mọi trang /en tự trỏ hai liên kết nội bộ vào URL 308 — đốt
+  // crawl budget và báo cho Google rằng site vẫn coi /vi là đích hợp lệ.
+  test('không trả về ngôn ngữ đã ngừng', () => {
+    expect(switchableLang('en')).toBeNull();
+  });
+
+  test('trang thuộc ngôn ngữ đã ngừng vẫn mời người đọc sang bản đang phục vụ', () => {
+    expect(switchableLang('vi')).toBe('en');
   });
 });
